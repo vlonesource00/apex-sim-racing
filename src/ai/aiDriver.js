@@ -248,6 +248,10 @@ export function createAiDriver(car, track, skill = 1, archetype = null) {
     draftTimer: 0,
     slingshotActive: false,
     divebombActive: false,
+    stabilizationTimer: 0,
+    emergencyBrake: 0,
+    avoidanceActive: false,
+    understeerCorrecting: false,
     _debugState: null,
   };
 
@@ -355,12 +359,21 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     driver.mistakeLat = 0;
   }
 
+  // Handle post-impact stabilization recovery
+  if (car.wallHit && car.wallHit > 0.15) {
+    driver.stabilizationTimer = 1.2;
+  } else if (driver.stabilizationTimer > 0) {
+    driver.stabilizationTimer -= dt;
+  }
+
   // Tactical situational awareness: scan opponents
   let draftMod = 1.0;
   let slowFactor = 1.0;
   let targetDefendLat = 0;
   let targetOvertakeLat = 0;
   let targetYieldLat = 0;
+  let maxEmergencyBrake = 0;
+  let avoidanceActive = false;
   let useFallback = true;
   let isUnderPressure = false;
 
@@ -370,65 +383,111 @@ export function updateAiDriver(driver, cars, dt, active = true) {
   const isUpcomingCorner = Math.abs(upcomingCurv) > 0.005;
   const insideDir = upcomingCurv > 0 ? 1.0 : upcomingCurv < 0 ? -1.0 : 0;
 
+  const nearestTrackSample = track.nearest(car.pos);
+  const trackSample = track.samples[nearestTrackSample.idx] || track.samples[0];
+  const halfTrackWidth = ((trackSample.width || 12) / 2) - 1.6;
+  const currentLateral = nearestTrackSample.lateral;
+
   for (const o of cars) {
     if (!o || o === car || !o.pos) continue;
     const dx = o.pos.x - car.pos.x, dz = o.pos.z - car.pos.z;
     const fwd = dx * cosH - dz * sinH;
     const latO = -dx * sinH - dz * cosH;
-    const closingSpeed = v - o.speed;
+    const closingSpeed = v - (o.speed || 0);
 
-    // 1. Slipstream Drafting & Slingshot Overtakes
-    if (fwd > 6 && fwd < 40 && Math.abs(latO) < 2.0) {
+    // 1. Forward Time-to-Collision (TTC) Radar & Anti-Crash Emergency Braking
+    // Scan vehicles ahead within 35m in forward sector (|latO| < 2.4m)
+    if (fwd > 0 && fwd < 35 && Math.abs(latO) < 2.4) {
+      if (closingSpeed > 1.0 && fwd < 25) {
+        const ttc = fwd / closingSpeed;
+        if (ttc < 1.4) {
+          const eBrake = clamp((1.4 - ttc) * 1.5, 0.4, 1.0);
+          maxEmergencyBrake = Math.max(maxEmergencyBrake, eBrake);
+          avoidanceActive = true;
+
+          // Evasive lane shift towards open track space with boundary safety check
+          let shiftDir = latO >= 0 ? -1.8 : 1.8;
+          if (shiftDir < 0 && (currentLateral < -halfTrackWidth + 1.8)) shiftDir = 1.8;
+          else if (shiftDir > 0 && (currentLateral > halfTrackWidth - 1.8)) shiftDir = -1.8;
+          targetOvertakeLat = shiftDir;
+        }
+      }
+
+      // Close-range proximity buffer (ensures no rear-end contact even at matched speed)
+      if (fwd < 5.5 && closingSpeed > -0.5) {
+        const proxBrake = clamp((5.5 - fwd) / 4.0, 0.3, 0.9);
+        maxEmergencyBrake = Math.max(maxEmergencyBrake, proxBrake);
+        avoidanceActive = true;
+        if (targetOvertakeLat === 0) {
+          let shiftDir = latO >= 0 ? -1.8 : 1.8;
+          if (shiftDir < 0 && (currentLateral < -halfTrackWidth + 1.8)) shiftDir = 1.8;
+          else if (shiftDir > 0 && (currentLateral > halfTrackWidth - 1.8)) shiftDir = -1.8;
+          targetOvertakeLat = shiftDir;
+        }
+      }
+
+      // Traffic speed modulation: pace behind leading car in braking zones
+      if (fwd > 5.0 && fwd < 32.0) {
+        const leadBraking = (o.input && o.input.brake > 0.15) || isUpcomingCorner;
+        if (leadBraking || closingSpeed > 0.5) {
+          const paceRatio = clamp((fwd - 4.5) / 24.0, 0.65, 1.0);
+          slowFactor = Math.min(slowFactor, paceRatio);
+        }
+      }
+    }
+
+    // 2. Slipstream Drafting & Slingshot Overtakes
+    if (fwd > 6 && fwd < 40 && Math.abs(latO) < 2.0 && !avoidanceActive) {
       draftMod = Math.max(draftMod, arch.draftSpeedBoost || 1.05);
       driver.draftTimer = (driver.draftTimer || 0) + dt;
 
       // Initiate slingshot pullout to inside lane when closing or approaching braking zone
-      if (fwd < 20 && (closingSpeed > 1.2 || isUpcomingCorner)) {
+      if (fwd < 22 && (closingSpeed > 1.0 || isUpcomingCorner)) {
         driver.slingshotActive = true;
         targetOvertakeLat = insideDir !== 0 ? insideDir * (arch.yieldLat || -1.8) : (latO > 0 ? -1.8 : 1.8);
       }
-    } else {
+    } else if (!avoidanceActive) {
       driver.draftTimer = Math.max(0, (driver.draftTimer || 0) - dt);
       if (driver.draftTimer <= 0) driver.slingshotActive = false;
     }
 
-    // 2. Late-Braking Divebombs (Alex Viper & Elena Rocket)
-    if (isUpcomingCorner && fwd > 2 && fwd < 18 && closingSpeed > 0.8) {
+    // 3. Late-Braking Divebombs (Alex Viper & Elena Rocket)
+    if (isUpcomingCorner && fwd > 2 && fwd < 18 && closingSpeed > 0.8 && !avoidanceActive) {
       if (arch.diveAggression && arch.diveAggression > 0.8) {
         driver.divebombActive = true;
-        // Dive into the inside line
         targetOvertakeLat = insideDir * (arch.yieldLat || -2.0);
       }
-    } else {
+    } else if (!avoidanceActive) {
       driver.divebombActive = false;
     }
 
-    // 3. Defensive Line Covering (Viktor Steiner & Marco Rossi)
-    if (fwd > -20 && fwd < -2 && Math.abs(latO) < 3.0) {
-      // Opponent is right on our rear tail entering a corner
+    // 4. Defensive Line Covering (Viktor Steiner & Marco Rossi)
+    if (fwd > -20 && fwd < -2 && Math.abs(latO) < 3.0 && !avoidanceActive) {
       if (isUpcomingCorner && arch.defenseAggression > 0.5) {
-        // Shift towards inside line to block
         targetDefendLat = insideDir * (1.2 * (arch.defenseAggression || 1.0));
       }
     }
 
-    // 4. Side-by-Side Space Yielding
-    if (Math.abs(fwd) < 7.0 && Math.abs(latO) < 3.0) {
-      const room = clamp(3.0 - Math.abs(latO), 0, 1.8);
+    // 5. Side-by-Side Spatial Clearance (2.0m Dynamic Corridor)
+    if (Math.abs(fwd) < 4.5 && Math.abs(latO) < 2.4) {
+      const overlap = clamp(2.4 - Math.abs(latO), 0, 2.0);
       if (latO > 0) {
-        // Opponent on left -> give room to the left by shifting right
-        targetYieldLat = -room * 0.7;
+        // Opponent on left -> enforce lateral corridor by yielding right
+        targetYieldLat -= Math.max(overlap * 0.8, 0.5);
       } else {
-        // Opponent on right -> give room to the right by shifting left
-        targetYieldLat = room * 0.7;
+        // Opponent on right -> enforce lateral corridor by yielding left
+        targetYieldLat += Math.max(overlap * 0.8, 0.5);
       }
     }
 
-    // 5. Pressure & Mistake Detection
+    // 6. Pressure & Mistake Detection
     if (fwd > -4.0 && fwd < 4.0 && Math.abs(latO) < 3.0) {
       isUnderPressure = true;
     }
   }
+
+  driver.emergencyBrake = maxEmergencyBrake;
+  driver.avoidanceActive = avoidanceActive;
 
   // Pressure accumulation & mistake simulation
   if (isUnderPressure) {
@@ -452,27 +511,76 @@ export function updateAiDriver(driver, cars, dt, active = true) {
   }
 
   // Smooth filter dynamic offsets
-  const filterRate = clamp(dt * 5.0, 0, 1);
+  const filterRate = clamp(dt * (avoidanceActive ? 8.0 : 4.5), 0, 1);
   driver.defendLat += (targetDefendLat - driver.defendLat) * filterRate;
   driver.overtakeLat += (targetOvertakeLat - driver.overtakeLat) * filterRate;
   driver.yieldLat += (targetYieldLat - driver.yieldLat) * filterRate;
 
-  const totalExtraLat = driver.defendLat + driver.overtakeLat + driver.yieldLat + driver.mistakeLat;
+  let totalExtraLat = driver.defendLat + driver.overtakeLat + driver.yieldLat + driver.mistakeLat;
+  totalExtraLat = clamp(totalExtraLat, -halfTrackWidth, halfTrackWidth);
 
   // Neural Network policy execution (if trained policy is supplied)
   const obs = getObs(car, track, driver.line);
-  if (Math.abs(obs[2]) > 1.2 || Math.abs(totalExtraLat) > 0.5) useFallback = true;
+  if (Math.abs(obs[2]) > 1.2 || Math.abs(totalExtraLat) > 0.5 || avoidanceActive || driver.stabilizationTimer > 0) {
+    useFallback = true;
+  }
 
-  const pt = linePoint(driver, progressS + look, totalExtraLat);
+  // During emergency avoidance, slightly shorten lookahead distance for agility while preserving stability
+  const effectiveLook = avoidanceActive ? Math.max(6.5, look * 0.75) : look;
+  const pt = linePoint(driver, progressS + effectiveLook, totalExtraLat);
 
-  // Target speed calculation with archetype braking, divebombs, mistakes, and lookahead
-  let brakeFactor = driver._brakeNoise;
+  // Target speed calculation with Dynamic Stopping Distance along forward line
+  let brakeFactor = driver._brakeNoise || 1.0;
   if (driver.mistakeType === 'lateBrake') brakeFactor *= 1.04;
-  const cornerSpeed = Math.min(1.05, arch.cornerSpeedFactor || 1.0);
+  const cornerSpeed = Math.min(1.06, arch.cornerSpeedFactor || 1.0);
+  const aEff = ABRAKE * (arch.brakeNoise || 1.0) * skill;
 
   let vTarg = pt.v * brakeFactor * slowFactor * skill * draftMod * cornerSpeed;
-  const ahead2 = linePoint(driver, progressS + look + 22, totalExtraLat);
-  vTarg = Math.min(vTarg, Math.sqrt(ahead2.v ** 2 + 2 * ABRAKE * 22) * slowFactor * skill * draftMod);
+
+  // Multi-horizon stopping distance lookahead: dStop = (v^2 - vApex^2) / (2 * aBrake)
+  const lookaheadDistances = [8, 16, 26, 38, 54, 74, 98, 126];
+  for (let k = 0; k < lookaheadDistances.length; k++) {
+    const distAhead = lookaheadDistances[k];
+    const aheadSample = linePoint(driver, progressS + look + distAhead, totalExtraLat);
+    const vApex = aheadSample.v * cornerSpeed * (arch.brakeNoise || 1.0) * skill;
+    const vMaxAllowed = Math.sqrt(Math.max(0, vApex * vApex + 2 * aEff * distAhead)) * slowFactor * draftMod;
+    if (vMaxAllowed < vTarg) {
+      vTarg = vMaxAllowed;
+    }
+  }
+
+  // --- Anti-Understeer Limit Steering Controller Helper ---
+  const applyAntiUndersteer = (rawSteer) => {
+    let steerOut = rawSteer;
+    const frontSlipL = car.wheels?.[0]?.slipAngle ?? 0;
+    const frontSlipR = car.wheels?.[1]?.slipAngle ?? 0;
+    const avgFrontSlip = (frontSlipL + frontSlipR) * 0.5;
+    const frontSlipMag = Math.abs(avgFrontSlip);
+    const slipDeg = frontSlipMag * (180 / Math.PI);
+
+    const understeerLimitDeg = 10.5; // Threshold where tire enters washout region
+    const optimalPeakGripRad = 8.5 * (Math.PI / 180); // ~0.148 rad optimal peak friction
+
+    let understeerDetected = false;
+    if (slipDeg > understeerLimitDeg && v > 4.0) {
+      understeerDetected = true;
+      const excessSlip = frontSlipMag - optimalPeakGripRad;
+      const steerSign = Math.sign(steerOut) || (avgFrontSlip < 0 ? 1 : -1);
+      const limitedSteerMag = Math.max(0.08, Math.abs(steerOut) - excessSlip * 0.85);
+      steerOut = steerSign * limitedSteerMag;
+    }
+    driver.understeerCorrecting = understeerDetected;
+
+    // Post-impact / wall-hit stabilization mode override
+    if (driver.stabilizationTimer > 0) {
+      const trackH = Math.atan2(-trackSample.dir.y, trackSample.dir.x);
+      let headErr = trackH - car.heading;
+      while (headErr > Math.PI) headErr -= 2 * Math.PI;
+      while (headErr < -Math.PI) headErr += 2 * Math.PI;
+      steerOut = clamp(headErr * 1.6 - car.yawRate * 0.22, -0.65, 0.65);
+    }
+    return { steer: steerOut, understeerDetected };
+  };
 
   if (!useFallback && policy && policy.trained) {
     const action = evaluatePolicy(policy, obs);
@@ -495,9 +603,27 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     }
 
     const blend = 0.2;
-    car.input.steer = clamp(algoSteer * (1 - blend) + action.steer * blend, -1, 1);
-    car.input.throttle = clamp((algoThrottle * (1 - blend) + action.throttle * blend) * skill * draftMod, 0, 1);
-    car.input.brake = clamp((algoBrake * (1 - blend) + action.brake * blend) * (2 - skill), 0, 1);
+    const blendedSteer = clamp(algoSteer * (1 - blend) + action.steer * blend, -1, 1);
+    const { steer: finalSteer, understeerDetected } = applyAntiUndersteer(blendedSteer);
+    car.input.steer = finalSteer;
+
+    if (maxEmergencyBrake > 0.1) {
+      car.input.brake = clamp(maxEmergencyBrake, 0, 1.0);
+      car.input.throttle = 0;
+    } else if (driver.stabilizationTimer > 0) {
+      const stabProgress = clamp(1.0 - driver.stabilizationTimer / 1.2, 0, 1);
+      car.input.throttle = clamp(0.35 + 0.65 * stabProgress, 0, 1.0);
+      car.input.brake = 0;
+    } else {
+      let th = (algoThrottle * (1 - blend) + action.throttle * blend) * skill * draftMod;
+      let brk = (algoBrake * (1 - blend) + action.brake * blend) * (2 - skill);
+      if (understeerDetected) {
+        th *= 0.85;
+        brk = clamp(brk * 0.9, 0.2, 1.0);
+      }
+      car.input.throttle = clamp(th, 0, 1);
+      car.input.brake = clamp(brk, 0, 1);
+    }
   } else {
     // --- Algorithmic Racecraft Controller ---
     const dxT = pt.x - car.pos.x, dzT = pt.z - car.pos.z;
@@ -507,11 +633,21 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     while (err < -Math.PI) err += 2 * Math.PI;
 
     const ff = pt.k * car.setup.wheelbase / 0.45;
-    const steer = clamp(err * 2.2 - car.yawRate * 0.10 + ff, -1, 1);
+    const rawSteer = clamp(err * 2.2 - car.yawRate * 0.10 + ff, -1, 1);
+    const { steer, understeerDetected } = applyAntiUndersteer(rawSteer);
     car.input.steer = steer;
 
     const dv = vTarg - v;
-    if (dv > 0.3) {
+    if (maxEmergencyBrake > 0.1) {
+      // Emergency braking from TTC radar or proximity
+      car.input.brake = clamp(maxEmergencyBrake, 0, 1.0);
+      car.input.throttle = 0;
+    } else if (driver.stabilizationTimer > 0) {
+      // Clean throttle ramping after wall impact / spin
+      const stabProgress = clamp(1.0 - driver.stabilizationTimer / 1.2, 0, 1);
+      car.input.throttle = clamp(0.35 + 0.65 * stabProgress, 0, 1.0);
+      car.input.brake = 0;
+    } else if (dv > 0.3) {
       // Accelerating
       let throttle = 1.0;
       if (dv < 2.5 && Math.abs(steer) > 0.18) {
@@ -523,6 +659,9 @@ export function updateAiDriver(driver, cars, dt, active = true) {
       } else {
         // Straights & open exits: FULL 100% THROTTLE
         throttle = 1.0;
+      }
+      if (understeerDetected) {
+        throttle *= 0.85; // Ease throttle slightly to restore front tire bite
       }
       if (driver.mistakeType === 'hesitation') {
         throttle *= 0.7; // Hesitation mistake
@@ -537,11 +676,15 @@ export function updateAiDriver(driver, cars, dt, active = true) {
         const trailMod = arch.trailBrakeMod ? 0.35 : 0.48;
         brake = clamp(brake * (1.0 - Math.abs(steer) * trailMod), 0.15, 1.0);
       }
+      if (understeerDetected) {
+        brake = clamp(brake * 0.9, 0.2, 1.0);
+      }
       car.input.throttle = 0;
       car.input.brake = clamp(brake, 0, 1.0);
     } else {
       // Rolling / maintaining high corner speed
       let rollThrottle = clamp(0.38 + (arch.cornerSpeedFactor ? (arch.cornerSpeedFactor - 0.95) * 0.5 : 0.05), 0.3, 0.6);
+      if (understeerDetected) rollThrottle *= 0.85;
       if (driver.mistakeType === 'hesitation') rollThrottle *= 0.7;
       car.input.throttle = rollThrottle;
       car.input.brake = 0;
@@ -557,7 +700,11 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     targetSpeed: vTarg * 3.6,        // km/h
     currentSpeed: v * 3.6,           // km/h
     lookaheadDist: look,             // meters
-    mode: driver.slingshotActive ? 'SLINGSHOT' :
+    mode: driver.stabilizationTimer > 0 ? 'STABILIZING' :
+          driver.emergencyBrake > 0.1 ? 'EMERGENCY_BRAKE' :
+          driver.avoidanceActive ? 'EVADING' :
+          driver.understeerCorrecting ? 'ANTI_UNDERSTEER' :
+          driver.slingshotActive ? 'SLINGSHOT' :
           driver.divebombActive ? 'DIVEBOMB' :
           driver.draftTimer > 0.5 ? 'DRAFTING' :
           driver.defendLat !== 0 ? 'DEFENDING' :
@@ -567,6 +714,8 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     yieldLat: driver.yieldLat || 0,
     mistakeLat: driver.mistakeLat || 0,
     totalExtraLat: totalExtraLat || 0,
+    emergencyBrake: driver.emergencyBrake || 0,
+    understeerCorrecting: driver.understeerCorrecting || false,
     draftSpeedBoost: driver.slingshotActive ? arch.draftSpeedBoost : 1.0,
     archetype: arch.name,
     badge: arch.badge,

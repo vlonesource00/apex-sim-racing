@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { buildScene } from '../gfx/scene.js';
 import { buildCarMesh } from '../gfx/carMesh.js';
-import { createCar, stepCar } from '../physics/car.js';
+import { createCar, stepCar, collideCars } from '../physics/car.js';
 import { getSetup } from '../physics/setups.js';
 import { buildTrack } from '../track/trackBuilder.js';
 import alpineDef from '../track/defs/alpine.js';
@@ -123,6 +123,7 @@ export function createGame(canvas) {
       let steps = 0;
       while (this._acc >= PHYS_DT && steps < 12) {
         for (const c of cars) stepCar(c, track, PHYS_DT);
+        collideCars(cars, PHYS_DT);
         this._acc -= PHYS_DT;
         steps++;
       }
@@ -164,6 +165,7 @@ export function createGame(canvas) {
       sound.dispose?.();
       env.dispose?.();
       debugVisualizer.dispose?.();
+      fx.dispose?.();
       for (const m of meshes.values()) m.dispose?.();
       renderer.dispose?.();
     },

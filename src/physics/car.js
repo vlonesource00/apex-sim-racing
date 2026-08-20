@@ -57,6 +57,7 @@ export function createCar(setup, opts = {}) {
     _wvX: new Float32Array(4),
     _wvY: new Float32Array(4),
     _wheelBrakes: new Float32Array(4),
+    _lastContact: { pos: new THREE.Vector3(), impact: 0 },
   };
 
   car.shiftUp = () => shiftUp(car);
@@ -490,3 +491,146 @@ function collideWalls(car, track) {
     }
   }
 }
+
+export function collideCars(cars, dt) {
+  if (!cars || cars.length < 2) return;
+
+  const nCars = cars.length;
+  const CIRCLE_OFFSET = 1.2;
+  const RAD_SUM = 1.90;
+  const RAD_SUM_SQ = 3.61;
+  const RESTITUTION = 0.35;
+
+  for (let i = 0; i < nCars; i++) {
+    const carA = cars[i];
+    if (!carA) continue;
+
+    for (let j = i + 1; j < nCars; j++) {
+      const carB = cars[j];
+      if (!carB) continue;
+
+      // Broadphase bounding check
+      const bdx = carA.pos.x - carB.pos.x;
+      const bdz = carA.pos.z - carB.pos.z;
+      if (bdx * bdx + bdz * bdz > 25.0) continue;
+
+      const cosHA = Math.cos(carA.heading), sinHA = Math.sin(carA.heading);
+      const cosHB = Math.cos(carB.heading), sinHB = Math.sin(carB.heading);
+
+      const fwdAx = cosHA, fwdAz = -sinHA;
+      const fwdBx = cosHB, fwdBz = -sinHB;
+
+      const invMassA = 1 / (carA.setup?.mass || 1250);
+      const invMassB = 1 / (carB.setup?.mass || 1250);
+      const invInertiaA = 1 / (carA.setup?.inertiaZ || 1900);
+      const invInertiaB = 1 / (carB.setup?.inertiaZ || 1900);
+
+      // Test all 4 circle-to-circle pairs (Front/Rear of A vs Front/Rear of B)
+      for (let ca = 0; ca < 2; ca++) {
+        const offA = ca === 0 ? CIRCLE_OFFSET : -CIRCLE_OFFSET;
+        for (let cb = 0; cb < 2; cb++) {
+          const offB = cb === 0 ? CIRCLE_OFFSET : -CIRCLE_OFFSET;
+
+          const cAx = carA.pos.x + offA * fwdAx;
+          const cAz = carA.pos.z + offA * fwdAz;
+          const cBx = carB.pos.x + offB * fwdBx;
+          const cBz = carB.pos.z + offB * fwdBz;
+
+          let dx = cAx - cBx;
+          let dz = cAz - cBz;
+          const distSq = dx * dx + dz * dz;
+
+          if (distSq < RAD_SUM_SQ) {
+            let dist = Math.sqrt(distSq);
+            if (dist < 1e-5) {
+              dist = 1e-5;
+              dx = 1e-5;
+              dz = 0;
+            }
+
+            const pen = RAD_SUM - dist;
+            const nx = dx / dist;
+            const nz = dz / dist;
+
+            // De-penetration: move car A by +0.5 * pen * n and car B by -0.5 * pen * n
+            const sepX = 0.5 * pen * nx;
+            const sepZ = 0.5 * pen * nz;
+            carA.pos.x += sepX;
+            carA.pos.z += sepZ;
+            carB.pos.x -= sepX;
+            carB.pos.z -= sepZ;
+
+            // Contact position
+            const contactX = 0.5 * (cAx + cBx);
+            const contactZ = 0.5 * (cAz + cBz);
+            const contactY = (carA.pos.y + carB.pos.y) * 0.5;
+
+            // Moment arms from CG to contact point
+            const rAx = contactX - carA.pos.x;
+            const rAz = contactZ - carA.pos.z;
+            const rBx = contactX - carB.pos.x;
+            const rBz = contactZ - carB.pos.z;
+
+            // Relative velocity at contact point
+            const vA_contact_x = carA.vel.x + carA.yawRate * rAz;
+            const vA_contact_z = carA.vel.z - carA.yawRate * rAx;
+            const vB_contact_x = carB.vel.x + carB.yawRate * rBz;
+            const vB_contact_z = carB.vel.z - carB.yawRate * rBx;
+
+            const v_rel_x = vA_contact_x - vB_contact_x;
+            const v_rel_z = vA_contact_z - vB_contact_z;
+            const v_rel_n = v_rel_x * nx + v_rel_z * nz;
+
+            // If moving towards each other, compute and apply collision impulse
+            if (v_rel_n < 0) {
+              const rAxn = rAz * nx - rAx * nz;
+              const rBxn = rBz * nx - rBx * nz;
+
+              const denom = invMassA + invMassB + (rAxn * rAxn) * invInertiaA + (rBxn * rBxn) * invInertiaB;
+              if (denom > 1e-6) {
+                const J = -(1 + RESTITUTION) * v_rel_n / denom;
+
+                // Apply linear impulse
+                carA.vel.x += (J * invMassA) * nx;
+                carA.vel.z += (J * invMassA) * nz;
+                carB.vel.x -= (J * invMassB) * nx;
+                carB.vel.z -= (J * invMassB) * nz;
+
+                // Apply rotational yaw impulse
+                carA.yawRate += (J * rAxn) * invInertiaA;
+                carB.yawRate -= (J * rBxn) * invInertiaB;
+
+                // Re-project world velocities back into car body frames
+                carA.vx = carA.vel.x * cosHA - carA.vel.z * sinHA;
+                carA.vy = -carA.vel.x * sinHA - carA.vel.z * cosHA;
+                carA.speed = Math.hypot(carA.vx, carA.vy);
+                carA.speedKph = carA.speed * 3.6;
+
+                carB.vx = carB.vel.x * cosHB - carB.vel.z * sinHB;
+                carB.vy = -carB.vel.x * sinHB - carB.vel.z * cosHB;
+                carB.speed = Math.hypot(carB.vx, carB.vy);
+                carB.speedKph = carB.speed * 3.6;
+              }
+
+              // Trigger impacts & damage
+              const impact = Math.abs(v_rel_n);
+              carA.wallHit = Math.max(carA.wallHit, clamp(impact / 6.0, 0, 1));
+              carB.wallHit = Math.max(carB.wallHit, clamp(impact / 6.0, 0, 1));
+              carA.damage = clamp(carA.damage + impact * 0.015, 0, 1);
+              carB.damage = clamp(carB.damage + impact * 0.015, 0, 1);
+
+              if (!carA._lastContact) carA._lastContact = { pos: new THREE.Vector3(), impact: 0 };
+              carA._lastContact.pos.set(contactX, contactY, contactZ);
+              carA._lastContact.impact = impact;
+
+              if (!carB._lastContact) carB._lastContact = { pos: new THREE.Vector3(), impact: 0 };
+              carB._lastContact.pos.set(contactX, contactY, contactZ);
+              carB._lastContact.impact = impact;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
