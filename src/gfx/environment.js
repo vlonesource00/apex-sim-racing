@@ -6,30 +6,66 @@ export function buildEnvironment(track, scene) {
 
   const dummy = new THREE.Object3D();
 
+  // Compute track bounding box and center
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const sm of track.samples) {
+    minX = Math.min(minX, sm.pos.x);
+    maxX = Math.max(maxX, sm.pos.x);
+    minZ = Math.min(minZ, sm.pos.z);
+    maxZ = Math.max(maxZ, sm.pos.z);
+  }
+  const trackCenterX = (minX + maxX) / 2;
+  const trackCenterZ = (minZ + maxZ) / 2;
+
+  // Ground elevation function that conforms strictly to track elevation
+  function getGroundHeight(x, z) {
+    const n = track.nearest({ x, z });
+    const sm = track.samples[n.idx];
+    const distToCenterline = n.dist;
+    const roadVergeWidth = (sm.width || 13) / 2 + 5.0; // road + curb + verge
+
+    // Under road and verge ribbon: stay safely below track geometry
+    if (distToCenterline <= roadVergeWidth) {
+      return sm.pos.y - 0.08;
+    }
+
+    const margin = distToCenterline - roadVergeWidth;
+    const roadY = sm.pos.y - 0.08;
+
+    if (margin < 40.0) {
+      // Smooth Hermite blend from road elevation to surrounding meadow
+      const t = margin / 40.0;
+      const smoothT = t * t * (3 - 2 * t);
+      const naturalMeadow = roadY - 0.2;
+      return roadY * (1 - smoothT) + naturalMeadow * smoothT;
+    }
+
+    // Far from track: gentle undulating meadow hills (never exceeding +4m)
+    const farDist = margin - 40.0;
+    const blendFar = Math.min(1.0, farDist / 100.0);
+    const meadowHills = Math.sin(x * 0.006) * Math.cos(z * 0.006) * 3.5;
+    return (sm.pos.y - 0.25) + meadowHills * blendFar;
+  }
+
   // ==========================================
-  // 1. VAST GROUND TERRAIN (Seamless Alpine Meadow)
+  // 1. VAST GROUND TERRAIN (Conforming to Track)
   // ==========================================
-  const terrainGeo = new THREE.PlaneGeometry(3500, 3500, 64, 64);
+  const terrainGeo = new THREE.PlaneGeometry(6000, 6000, 100, 100);
   terrainGeo.rotateX(-Math.PI / 2);
   
-  // Add subtle organic rolling terrain elevation
+  // Center terrain mesh on track center
+  terrainGeo.translate(trackCenterX, 0, trackCenterZ);
+
   const posAttr = terrainGeo.attributes.position;
   for (let i = 0; i < posAttr.count; i++) {
     const x = posAttr.getX(i);
     const z = posAttr.getZ(i);
-    // Low frequency rolling hills away from the center
-    const d = Math.hypot(x, z);
-    if (d > 180) {
-      const hill = Math.sin(x * 0.008) * Math.cos(z * 0.008) * 18 + Math.sin(x * 0.015) * 8;
-      posAttr.setY(i, Math.max(-1.5, hill * Math.min(1, (d - 180) / 300)) - 0.2);
-    } else {
-      posAttr.setY(i, -0.2);
-    }
+    posAttr.setY(i, getGroundHeight(x, z));
   }
   terrainGeo.computeVertexNormals();
 
   const terrainMat = new THREE.MeshStandardMaterial({
-    color: 0x3d6632,
+    color: 0x325626,
     roughness: 0.95,
     metalness: 0.05,
     flatShading: true,
@@ -39,42 +75,43 @@ export function buildEnvironment(track, scene) {
   group.add(terrain);
 
   // ==========================================
-  // 2. SNOW-CAPPED ALPINE MOUNTAIN RANGE (Distant Horizon)
+  // 2. SNOW-CAPPED ALPINE MOUNTAIN RANGE (Far Horizon Ring)
   // ==========================================
   const mtnGroup = new THREE.Group();
   const mtnCount = 36;
   const mtnRockMat = new THREE.MeshStandardMaterial({
-    color: 0x4f5963,
+    color: 0x47515a,
     roughness: 0.9,
     metalness: 0.1,
     flatShading: true,
   });
   const mtnSnowMat = new THREE.MeshStandardMaterial({
-    color: 0xeef4f8,
-    roughness: 0.7,
+    color: 0xf0f5f9,
+    roughness: 0.65,
     metalness: 0.05,
     flatShading: true,
   });
 
-  // Base Rock Cone
-  const rockGeo = new THREE.ConeGeometry(320, 480, 7, 1);
-  rockGeo.translate(0, 240, 0);
+  // Base Rock Cone (radius 420m, height 700m, deeply anchored into ground)
+  const rockGeo = new THREE.ConeGeometry(420, 700, 8, 1);
+  rockGeo.translate(0, 250, 0);
   const rockMesh = new THREE.InstancedMesh(rockGeo, mtnRockMat, mtnCount);
 
   // Snow Cap Peak
-  const snowGeo = new THREE.ConeGeometry(140, 190, 7, 1);
-  snowGeo.translate(0, 385, 0);
+  const snowGeo = new THREE.ConeGeometry(180, 260, 8, 1);
+  snowGeo.translate(0, 470, 0);
   const snowMesh = new THREE.InstancedMesh(snowGeo, mtnSnowMat, mtnCount);
 
+  // Place mountains in a wide ring 1650m - 1950m away from track center
   for (let i = 0; i < mtnCount; i++) {
-    const angle = (i / mtnCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.1;
-    const r = 1100 + (i % 3) * 200 + Math.random() * 150;
-    const px = Math.cos(angle) * r;
-    const pz = Math.sin(angle) * r;
-    const scaleY = 0.8 + Math.random() * 0.9;
-    const scaleXZ = 0.8 + Math.random() * 0.6;
+    const angle = (i / mtnCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.08;
+    const r = 1750 + (i % 4) * 120 + Math.random() * 100;
+    const px = trackCenterX + Math.cos(angle) * r;
+    const pz = trackCenterZ + Math.sin(angle) * r;
+    const scaleY = 0.9 + Math.random() * 0.8;
+    const scaleXZ = 0.9 + Math.random() * 0.5;
 
-    dummy.position.set(px, -20, pz);
+    dummy.position.set(px, -120, pz);
     dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
     dummy.scale.set(scaleXZ, scaleY, scaleXZ);
     dummy.updateMatrix();
@@ -88,25 +125,24 @@ export function buildEnvironment(track, scene) {
   group.add(mtnGroup);
 
   // ==========================================
-  // 3. REALISTIC 3D PINE TREES (Multi-tiered Instanced Forest)
+  // 3. REALISTIC 3D PINE TREES (Naturally Dispersed)
   // ==========================================
-  // Build a multi-tier pine tree geometry: Trunk + 3 layered cone crowns
-  const trunkGeo = new THREE.CylinderGeometry(0.25, 0.4, 3.0, 6);
-  trunkGeo.translate(0, 1.5, 0);
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3d2714, roughness: 0.95 });
+  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.35, 2.8, 6);
+  trunkGeo.translate(0, 1.4, 0);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x362312, roughness: 0.95 });
 
-  const crownGeo1 = new THREE.ConeGeometry(2.4, 4.0, 6);
-  crownGeo1.translate(0, 3.8, 0);
-  const crownGeo2 = new THREE.ConeGeometry(1.8, 3.4, 6);
-  crownGeo2.translate(0, 5.6, 0);
-  const crownGeo3 = new THREE.ConeGeometry(1.2, 2.6, 6);
-  crownGeo3.translate(0, 7.2, 0);
+  const crownGeo1 = new THREE.ConeGeometry(2.2, 3.6, 6);
+  crownGeo1.translate(0, 3.5, 0);
+  const crownGeo2 = new THREE.ConeGeometry(1.6, 3.0, 6);
+  crownGeo2.translate(0, 5.1, 0);
+  const crownGeo3 = new THREE.ConeGeometry(1.1, 2.4, 6);
+  crownGeo3.translate(0, 6.5, 0);
 
-  const foliageMat1 = new THREE.MeshStandardMaterial({ color: 0x1f3b18, roughness: 0.85, flatShading: true });
-  const foliageMat2 = new THREE.MeshStandardMaterial({ color: 0x274a1e, roughness: 0.85, flatShading: true });
-  const foliageMat3 = new THREE.MeshStandardMaterial({ color: 0x315c26, roughness: 0.85, flatShading: true });
+  const foliageMat1 = new THREE.MeshStandardMaterial({ color: 0x1c3616, roughness: 0.85, flatShading: true });
+  const foliageMat2 = new THREE.MeshStandardMaterial({ color: 0x24441b, roughness: 0.85, flatShading: true });
+  const foliageMat3 = new THREE.MeshStandardMaterial({ color: 0x2e5423, roughness: 0.85, flatShading: true });
 
-  const treeCount = 900;
+  const treeCount = 800;
   const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
   const foliageMesh1 = new THREE.InstancedMesh(crownGeo1, foliageMat1, treeCount);
   const foliageMesh2 = new THREE.InstancedMesh(crownGeo2, foliageMat2, treeCount);
@@ -118,19 +154,18 @@ export function buildEnvironment(track, scene) {
 
   let placed = 0;
   for (let i = 0; i < treeCount; i++) {
-    // Pick track sample and place safely outside the track + runoff
     const sm = track.samples[Math.floor(Math.random() * track.samples.length)];
     const side = Math.random() > 0.5 ? 1 : -1;
-    // Keep min distance 24m away from centerline so trees never encroach on track
-    const dist = 24 + Math.pow(Math.random(), 1.6) * 160;
-    const lateralJitter = (Math.random() - 0.5) * 16;
-    const forwardJitter = (Math.random() - 0.5) * 16;
+    // Distance safely 20m - 160m outside track centerline
+    const dist = 20 + Math.pow(Math.random(), 1.5) * 140;
+    const lateralJitter = (Math.random() - 0.5) * 14;
+    const forwardJitter = (Math.random() - 0.5) * 14;
 
     const px = sm.pos.x + sm.left.x * dist * side + sm.dir.x * forwardJitter + sm.left.x * lateralJitter;
     const pz = sm.pos.z + sm.left.y * dist * side + sm.dir.y * forwardJitter + sm.left.y * lateralJitter;
-    const py = track.heightAt ? track.heightAt(px, pz) : 0;
+    const py = getGroundHeight(px, pz);
 
-    const scale = 0.75 + Math.random() * 0.7; // Tree height 6m - 12m
+    const scale = 0.7 + Math.random() * 0.6;
     dummy.position.set(px, py, pz);
     dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
     dummy.scale.set(scale, scale * (0.9 + Math.random() * 0.3), scale);

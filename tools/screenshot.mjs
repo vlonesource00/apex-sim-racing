@@ -61,20 +61,25 @@ await shot('02_chase_accel');
 
 // steer through first corner
 await key('KeyA', true);
-await sleep(700);
+await sleep(600);
 await key('KeyA', false);
-await sleep(1200);
+await sleep(1500);
 await shot('03_chase_corner');
 
 // cockpit
 await key('KeyC', true); await key('KeyC', false);
-await sleep(600);
+await sleep(1000);
 await shot('04_cockpit');
 
 // hood
 await key('KeyC', true); await key('KeyC', false);
-await sleep(600);
+await sleep(1000);
 await shot('05_hood');
+
+// continue driving further down the circuit
+await key('KeyC', true); await key('KeyC', false); // back to chase
+await sleep(3000);
+await shot('06_back_straight');
 
 const info = await page.evaluate(() => {
   const s = window.__APEX__.state;
