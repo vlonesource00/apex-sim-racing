@@ -76,10 +76,10 @@ export function createHud(el) {
   `;
 
   const rpmLeds = el.querySelectorAll('.rpm-led');
-  const gearEl = el.getElementById('gear');
-  const speedEl = el.getElementById('speed');
-  const throttleBar = el.getElementById('throttle-bar');
-  const brakeBar = el.getElementById('brake-bar');
+  const gearEl = el.querySelector('#gear');
+  const speedEl = el.querySelector('#speed');
+  const throttleBar = el.querySelector('#throttle-bar');
+  const brakeBar = el.querySelector('#brake-bar');
   const posEl = el.querySelector('.pos');
   const lapEl = el.querySelector('.lap');
   const currentTimeEl = el.querySelector('.current-time');
@@ -88,10 +88,10 @@ export function createHud(el) {
   const deltaEl = el.querySelector('.delta');
   const minimapCanvas = el.querySelector('.minimap-canvas');
   const ctx = minimapCanvas.getContext('2d');
-  const camModeEl = el.getElementById('cam-mode');
-  const damageBar = el.getElementById('damage-bar');
-  const gDot = el.getElementById('g-dot');
-  const overlay = el.getElementById('overlay');
+  const camModeEl = el.querySelector('#cam-mode');
+  const damageBar = el.querySelector('#damage-bar');
+  const gDot = el.querySelector('#g-dot');
+  const overlay = el.querySelector('#overlay');
   
   const tireFills = Array.from(el.querySelectorAll('.tire-fill'));
   const tireSlips = Array.from(el.querySelectorAll('.tire-slip'));
@@ -251,26 +251,31 @@ export function createHud(el) {
 
         // Draw Cars
         if (state.cars) {
-          state.cars.forEach((c, i) => {
+          state.cars.forEach((c) => {
             const isPlayer = c === p;
-            const pt = toMap(c.position && c.position.x ? c.position.x : 0, c.position && c.position.z ? c.position.z : 0);
+            const pos = c.pos || c.position;
+            const px = pos ? pos.x : 0;
+            const pz = pos ? pos.z : 0;
+            const pt = toMap(px, pz);
             
             if (isPlayer) {
               // Arrow for player
               ctx.save();
               ctx.translate(pt.x, pt.y);
-              ctx.rotate(-(c.heading || 0)); // Might need adjustment based on world coords
-              ctx.fillStyle = '#f00';
+              ctx.rotate(-(c.heading || 0));
+              ctx.fillStyle = '#ff2222';
               ctx.beginPath();
-              ctx.moveTo(0, -6);
-              ctx.lineTo(4, 4);
-              ctx.lineTo(-4, 4);
+              ctx.moveTo(0, -7);
+              ctx.lineTo(5, 5);
+              ctx.lineTo(-5, 5);
+              ctx.closePath();
               ctx.fill();
               ctx.restore();
             } else {
-              ctx.fillStyle = c.color || '#0ff';
+              const hex = c.colorHex != null ? '#' + Number(c.colorHex).toString(16).padStart(6, '0') : '#00ddff';
+              ctx.fillStyle = hex;
               ctx.beginPath();
-              ctx.arc(pt.x, pt.y, 3, 0, Math.PI*2);
+              ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
               ctx.fill();
             }
           });
