@@ -20,7 +20,12 @@ export function createCar(setup, opts = {}) {
     isPlayer: !!opts.isPlayer,
     name: opts.name || 'Car',
     colorHex: opts.colorHex ?? 0xe10600,
-    autoShift: opts.autoShift !== false,
+    transmission: opts.transmission ?? (opts.autoShift === false ? 'manual' : 'auto'),
+    autoShift: opts.autoShift !== false && opts.transmission !== 'manual',
+    tcLevel: opts.tcLevel ?? 1,   // 0: Off, 1: Low, 2: High
+    absLevel: opts.absLevel ?? 1, // 0: Off, 1: Low, 2: High
+    tcActive: false,
+    absActive: false,
 
     pos: new THREE.Vector3(0, 0, 0),
     heading: 0, pitch: 0, roll: 0,
@@ -31,6 +36,7 @@ export function createCar(setup, opts = {}) {
     a, b,
     input: { throttle: 0, brake: 0, steer: 0, clutch: 0, gearRequest: 0 },
     gear: 1, rpm: s.idleRpm,
+    _blipTimer: 0,
     wheels: [0, 1, 2, 3].map(() => ({
       load: 0, slipAngle: 0, slipRatio: 0, suspDefl: 0, spin: 0, omega: 0,
       onTrack: true, grip: 1, surface: 'track', fx: 0, fy: 0,
@@ -41,22 +47,93 @@ export function createCar(setup, opts = {}) {
     finished: false, place: 0,
     damage: 0,
     surface: 'track',
-    surfaceMu: 1,
-
     _ax: 0, _ay: 0,
     _steer: 0,
     _trackIdx: 0,
     offTrack: false,
     wallHit: 0, // decays; used for fx/sound/damage
+
+    _loads: new Float32Array(4),
+    _wvX: new Float32Array(4),
+    _wvY: new Float32Array(4),
+    _wheelBrakes: new Float32Array(4),
   };
+
+  car.shiftUp = () => shiftUp(car);
+  car.shiftDown = () => shiftDown(car);
+  car.toggleTransmission = () => {
+    car.transmission = car.transmission === 'auto' ? 'manual' : 'auto';
+    car.autoShift = car.transmission === 'auto';
+  };
+  car.toggleTC = () => {
+    car.tcLevel = (car.tcLevel + 1) % 3;
+  };
+  car.toggleABS = () => {
+    car.absLevel = (car.absLevel + 1) % 3;
+  };
+
   // Static loads
   car._staticFront = s.mass * G * s.weightDist;
   car._staticRear = s.mass * G * (1 - s.weightDist);
   return car;
 }
 
+function shiftUp(car) {
+  const s = car.setup;
+  const maxGears = s.gears.length;
+  if (car.gear === -1) {
+    car.gear = 0;
+  } else if (car.gear === 0) {
+    car.gear = 1;
+  } else if (car.gear < maxGears) {
+    car.gear++;
+  }
+  syncRpmAfterShift(car, false);
+}
+
+function shiftDown(car) {
+  if (car.gear > 1) {
+    car.gear--;
+    syncRpmAfterShift(car, true);
+  } else if (car.gear === 1) {
+    car.gear = 0;
+    syncRpmAfterShift(car, true);
+  } else if (car.gear === 0) {
+    car.gear = -1;
+    syncRpmAfterShift(car, true);
+  }
+}
+
+function syncRpmAfterShift(car, isDownshift) {
+  const s = car.setup;
+  const driveRear = s.driveWheels === 'rear' || s.driveWheels === 'all';
+  const driveOmegaWheel = driveRear
+    ? (car.wheels[2].omega + car.wheels[3].omega) / 2
+    : (car.wheels[0].omega + car.wheels[1].omega) / 2;
+
+  if (car.gear === 0) return;
+
+  const gearRatio = car.gear === -1 ? s.reverse : (s.gears[car.gear - 1] || s.gears[0]);
+  const ratioTotal = gearRatio * s.finalDrive;
+  const targetRpm = Math.abs(driveOmegaWheel) * ratioTotal * (60 / TWO_PI);
+
+  if (isDownshift) {
+    // Throttle blip / rev-matching
+    car.rpm = clamp(Math.max(car.rpm, targetRpm * 1.02), s.idleRpm, s.redline);
+    car._blipTimer = 0.12;
+  } else {
+    car.rpm = clamp(targetRpm, s.idleRpm, s.redline);
+    car._blipTimer = 0;
+  }
+}
+
 function surfaceAt(track, car) {
-  if (!track) return { mu: 1, surface: 'track', lateral: 0 };
+  if (!track) {
+    car.surface = 'track';
+    car.surfaceMu = 1;
+    car.offTrack = false;
+    return 1;
+  }
   const n = track.nearest(car.pos);
   car._trackIdx = n.idx;
   car.progressS = n.s;
@@ -65,21 +142,30 @@ function surfaceAt(track, car) {
   car.surface = surf;
   car.surfaceMu = mu;
   car.offTrack = surf !== 'track' && surf !== 'curb';
-  return { mu, surface: surf, lateral: n.lateral, dist: n.dist };
+  return mu;
 }
 
 export function stepCar(car, track, dt) {
   const s = car.setup;
   const inp = car.input;
 
+  // --- Gear request from input ----------------------------------------------
+  if (inp.gearRequest === 1) {
+    shiftUp(car);
+    inp.gearRequest = 0;
+  } else if (inp.gearRequest === -1) {
+    shiftDown(car);
+    inp.gearRequest = 0;
+  }
+
   // --- Surface / grip -------------------------------------------------------
-  const surf = surfaceAt(track, car);
+  const gripMul = surfaceAt(track, car);
   const rr = SURFACE[car.surface]?.rr ?? 0.01;
 
   // --- Steering (rate-limited actuator) ------------------------------------
-  const maxSteer = 0.55; // rad at wheel
+  const maxSteer = s.steerLock ?? 0.48; // rad at wheel (~27.5 deg)
   const steerTarget = clamp(inp.steer, -1, 1) * maxSteer;
-  const steerRate = 3.2; // rad/s
+  const steerRate = 3.4; // rad/s (crisp steering response)
   car._steer += clamp(steerTarget - car._steer, -steerRate * dt, steerRate * dt);
   // Mild speed-sensitive steering ratio (stability at speed, authority retained)
   const speedSteer = 1 / (1 + car.speed * 0.008);
@@ -101,69 +187,142 @@ export function stepCar(car, track, dt) {
   Fzf += dfFront;
   Fzr += dfRear;
 
-  const loads = [
-    Fzf / 2 - s.rollSplit * latTransfer,       // FL
-    Fzf / 2 + s.rollSplit * latTransfer,       // FR
-    Fzr / 2 - (1 - s.rollSplit) * latTransfer, // RL
-    Fzr / 2 + (1 - s.rollSplit) * latTransfer, // RR
-  ].map((L) => Math.max(L, 0));
+  const loads = car._loads;
+  loads[0] = Math.max(0, Fzf / 2 - s.rollSplit * latTransfer);       // FL
+  loads[1] = Math.max(0, Fzf / 2 + s.rollSplit * latTransfer);       // FR
+  loads[2] = Math.max(0, Fzr / 2 - (1 - s.rollSplit) * latTransfer); // RL
+  loads[3] = Math.max(0, Fzr / 2 + (1 - s.rollSplit) * latTransfer); // RR
 
   // --- Per-wheel kinematics -------------------------------------------------
   const halfT = s.trackWidth / 2;
   const r = car.yawRate;
-  const wv = [0, 1, 2, 3].map((i) => {
+  const wvX = car._wvX;
+  const wvY = car._wvY;
+  for (let i = 0; i < 4; i++) {
     const px = WHEEL_X[i] > 0 ? car.a : -car.b;
     const py = WHEEL_Y[i] * halfT;
-    return {
-      vx: car.vx - r * py,
-      vy: car.vy + r * px,
-    };
-  });
+    wvX[i] = car.vx - r * py;
+    wvY[i] = car.vy + r * px;
+  }
 
   const driveRear = s.driveWheels === 'rear' || s.driveWheels === 'all';
   const driveFront = s.driveWheels === 'front' || s.driveWheels === 'all';
 
-  // --- Drivetrain -------------------------------------------------------------
-  const throttle = clamp(inp.throttle, 0, 1);
+  // --- Drivetrain & Assists -------------------------------------------------
   const driveOmegaWheel = driveRear
     ? (car.wheels[2].omega + car.wheels[3].omega) / 2
     : (car.wheels[0].omega + car.wheels[1].omega) / 2;
 
-  // Auto shift (snap rpm on change = clutch kick rev-match)
+  // Auto shift
   const gearBefore = car.gear;
-  if (car.autoShift) autoShift(car);
-  const gearRatio = car.gear === -1 ? s.reverse : (s.gears[car.gear - 1] || s.gears[0]);
-  const ratioTotal = gearRatio * s.finalDrive;
-  if (car.gear !== gearBefore) {
-    car.rpm = clamp(Math.abs(driveOmegaWheel) * ratioTotal * (60 / TWO_PI), s.idleRpm, s.redline);
+  if (car.transmission === 'auto' || car.autoShift) {
+    autoShift(car);
   }
 
-  // Engine speed integrated with its own inertia; clutch holds it above wheel speed.
-  const engineTorque = s.torqueCurve(car.rpm) * throttle;
+  // Blip timer countdown
+  if (car._blipTimer > 0) {
+    car._blipTimer = Math.max(0, car._blipTimer - dt);
+  }
+
+  // Throttle input + rev-match blip
+  let rawThrottle = clamp(inp.throttle, 0, 1);
+  if (car._blipTimer > 0 && car.transmission === 'manual') {
+    const blipThrottle = 0.65 * (car._blipTimer / 0.12);
+    rawThrottle = Math.max(rawThrottle, blipThrottle);
+  }
+
+  // Traction Control (TC)
+  let tcCut = 0;
+  const rearSlipAvg = (car.wheels[2].slipRatio + car.wheels[3].slipRatio) / 2;
+  if (!car.offTrack && car.speed > 3.0) {
+    if (car.tcLevel === 1) {
+      // Low (Race): allows playful wheelspin up to 0.25, gentle torque cut
+      if (rearSlipAvg > 0.25) {
+        tcCut = clamp((rearSlipAvg - 0.25) / 0.25, 0, 0.30);
+      }
+    } else if (car.tcLevel === 2) {
+      // High (Safe): intervenes above 0.15 slip, cuts up to 50%
+      if (rearSlipAvg > 0.15) {
+        tcCut = clamp((rearSlipAvg - 0.15) / 0.20, 0, 0.50);
+      }
+    }
+  }
+  car.tcActive = tcCut > 0.05;
+  const throttle = rawThrottle * (1 - tcCut);
+
+  const isNeutral = car.gear === 0;
+  const isReverse = car.gear === -1;
+  const gearRatio = isReverse ? s.reverse : isNeutral ? 0 : (s.gears[car.gear - 1] || s.gears[0]);
+  const ratioTotal = gearRatio * s.finalDrive;
+
+  if (car.gear !== gearBefore) {
+    syncRpmAfterShift(car, car.gear < gearBefore);
+  }
+
+  // Engine speed integrated with its own inertia
+  const engineTorque = isNeutral ? 0 : s.torqueCurve(car.rpm) * throttle;
   const driveReactionPrev = driveRear
     ? car.wheels[2].fx + car.wheels[3].fx
     : car.wheels[0].fx + car.wheels[1].fx;
-  const tLoad = (driveReactionPrev * s.wheelRadius) / ratioTotal;
+  const tLoad = ratioTotal > 0 ? (driveReactionPrev * s.wheelRadius) / ratioTotal : 0;
   const tFric = (18 + car.rpm * 0.012) * (throttle > 0.05 ? 0.35 : 1);
   let we = (car.rpm * TWO_PI) / 60 + ((engineTorque - tLoad - tFric) / (s.engineInertia ?? 0.28)) * dt;
-  we = Math.max(we, Math.abs(driveOmegaWheel) * ratioTotal);
+  if (ratioTotal > 0) {
+    we = Math.max(we, Math.abs(driveOmegaWheel) * ratioTotal);
+  }
   we = clamp(we, (s.idleRpm * TWO_PI) / 60, ((s.redline + 250) * TWO_PI) / 60);
   car.rpm = (we * 60) / TWO_PI;
 
-  const shaftTorque = engineTorque * ratioTotal;
-  const drivePerWheel = shaftTorque / (s.driveWheels === 'all' ? 4 : 2);
-  const brakeFront = (inp.brake * s.brakeTorqueFront) / 2;
-  const brakeRear = (inp.brake * s.brakeTorqueRear) / 2;
+  const shaftTorque = isReverse ? -engineTorque * ratioTotal : engineTorque * ratioTotal;
+  const drivePerWheel = ratioTotal > 0 ? shaftTorque / (s.driveWheels === 'all' ? 4 : 2) : 0;
+
+  // Differential Locking (LSD) on Rear Axle
+  let driveRL = drivePerWheel;
+  let driveRR = drivePerWheel;
+  if (driveRear && ratioTotal > 0) {
+    const dOmega = car.wheels[2].omega - car.wheels[3].omega;
+    const diffLock = s.diffLock ?? 0.65;
+    const maxLock = Math.abs(drivePerWheel) * diffLock + (s.diffPreload ?? 60) * 0.5;
+    const diffTq = clamp(dOmega * 60, -maxLock, maxLock);
+    driveRL -= diffTq;
+    driveRR += diffTq;
+  }
+
+  // --- Braking & ABS --------------------------------------------------------
+  const totalBrakeTorque = (s.brakeTorqueFront + s.brakeTorqueRear) || 6400;
+  const bias = s.brakeBias ?? 0.54;
+  const rawBrakeFront = (inp.brake * totalBrakeTorque * bias) / 2;
+  const rawBrakeRear = (inp.brake * totalBrakeTorque * (1 - bias)) / 2;
+
+  let absCutFront = 0;
+  let absCutRear = 0;
+  const frontSlipAvg = (car.wheels[0].slipRatio + car.wheels[1].slipRatio) / 2;
+  const rearSlipAvgBrake = (car.wheels[2].slipRatio + car.wheels[3].slipRatio) / 2;
+  if (car.absLevel === 1) {
+    // Low (Race): threshold braking modulation near peak grip
+    if (frontSlipAvg < -0.25) absCutFront = clamp((-frontSlipAvg - 0.25) / 0.15, 0, 0.25);
+    if (rearSlipAvgBrake < -0.25) absCutRear = clamp((-rearSlipAvgBrake - 0.25) / 0.15, 0, 0.25);
+  } else if (car.absLevel === 2) {
+    // High (Safe): prevents lockup with progressive cut
+    if (frontSlipAvg < -0.15) absCutFront = clamp((-frontSlipAvg - 0.15) / 0.15, 0, 0.40);
+    if (rearSlipAvgBrake < -0.15) absCutRear = clamp((-rearSlipAvgBrake - 0.15) / 0.15, 0, 0.40);
+  }
+  car.absActive = absCutFront > 0.05 || absCutRear > 0.05;
+
+  const wheelBrakes = car._wheelBrakes;
+  wheelBrakes[0] = rawBrakeFront * (1 - absCutFront);
+  wheelBrakes[1] = rawBrakeFront * (1 - absCutFront);
+  wheelBrakes[2] = rawBrakeRear * (1 - absCutRear);
+  wheelBrakes[3] = rawBrakeRear * (1 - absCutRear);
 
   // --- Tire forces (quasi-static, friction-circle capped) ----------------------
   let Fx = 0, Fy = 0, Mz = 0;
-  const gripMul = surf.mu;
   const lowBlend = 0.25 + 0.75 * clamp(car.speed / 4, 0, 1);
   for (let i = 0; i < 4; i++) {
     const w = car.wheels[i];
     const isFront = i < 2;
     const isDrive = (isFront && driveFront) || (!isFront && driveRear);
-    const vxw = wv[i].vx, vyw = wv[i].vy;
+    const vxw = wvX[i], vyw = wvY[i];
     const fwd = Math.max(Math.abs(vxw), 0.6);
 
     const slipAngle = Math.atan2(vyw, fwd) - (isFront ? steer : 0);
@@ -180,8 +339,12 @@ export function stepCar(car, track, dt) {
     const FyPure = -Math.sign(sy) * magicMag(s.tire, D, Math.abs(sy));
 
     // Requested longitudinal force (drive - brake) at the contact patch
-    const brakeTq = isFront ? brakeFront : brakeRear;
-    const Freq = ((isDrive ? drivePerWheel : 0) - Math.sign(vxw || 1) * brakeTq) / s.wheelRadius;
+    let driveForce = 0;
+    if (isDrive) {
+      driveForce = (i === 2 ? driveRL : i === 3 ? driveRR : drivePerWheel) / s.wheelRadius;
+    }
+    const brakeTq = wheelBrakes[i];
+    const Freq = driveForce - Math.sign(vxw || 1) * (brakeTq / s.wheelRadius);
 
     const cap = Math.sqrt(Math.max(D * D - FyPure * FyPure, (0.12 * D) ** 2));
     const fx = cap * Math.tanh(Freq / cap);
@@ -199,6 +362,22 @@ export function stepCar(car, track, dt) {
     Fx += fx;
     Fy += fy;
     Mz += px * fy - py * fx;
+  }
+
+  // --- Power-oversteer yaw moment -------------------------------------------
+  // When rear slip ratio > 0.08 and throttle > 0.6, add yaw moment for playful rotation
+  const rearSlip = Math.max(car.wheels[2].slipRatio, car.wheels[3].slipRatio);
+  if (rearSlip > 0.08 && throttle > 0.6 && car.speed > 2.0 && !car.offTrack) {
+    const slipExcess = clamp((rearSlip - 0.08) / 0.20, 0, 1);
+    const thrExcess = clamp((throttle - 0.6) / 0.4, 0, 1);
+    const poMagnitude = slipExcess * thrExcess * gripMul;
+    const steerDir = Math.sign(steer);
+    if (steerDir !== 0) {
+      const isCounterSteer = steer * car.yawRate < -0.05;
+      const assistGain = isCounterSteer ? 750 : 320;
+      const yawDamp = clamp(1 - Math.abs(car.yawRate) / 2.0, 0.1, 1.0);
+      Mz += steerDir * poMagnitude * assistGain * yawDamp;
+    }
   }
 
   // --- Longitudinal drag + rolling resistance on body -----------------------

@@ -38,7 +38,22 @@ export function createHud(el) {
       <canvas class="minimap-canvas" width="200" height="200"></canvas>
     </div>
 
+    <!-- Proximity Spotter Radar -->
+    <div class="spotter-radar spotter-left" id="spotter-left">
+      <div class="spotter-arrows">◀◀◀</div>
+      <div class="spotter-dist" id="spotter-left-dist"></div>
+    </div>
+    <div class="spotter-radar spotter-right" id="spotter-right">
+      <div class="spotter-arrows">▶▶▶</div>
+      <div class="spotter-dist" id="spotter-right-dist"></div>
+    </div>
+    <div class="spotter-radar spotter-rear" id="spotter-rear">
+      <div class="spotter-arrows">▼ CAR BEHIND ▼</div>
+      <div class="spotter-dist" id="spotter-rear-dist"></div>
+    </div>
+
     <div class="hud-cluster">
+      <div class="shift-helper" id="shift-helper">▲ SHIFT UP ▲</div>
       <div class="rpm-bar-container" id="rpm-bar">
         ${Array.from({length: 15}).map(() => `<div class="rpm-led"></div>`).join('')}
       </div>
@@ -46,8 +61,15 @@ export function createHud(el) {
         <div class="pedals">
           <div class="pedal-bar pedal-brake"><div class="pedal-fill" id="brake-bar"></div></div>
         </div>
-        <div class="gear" id="gear">N</div>
+        <div class="gear-box">
+          <div class="gear" id="gear">N</div>
+          <div class="trans-mode auto" id="trans-mode" title="Click or Press M to Toggle Mode">AUTO</div>
+        </div>
         <div class="speed"><span id="speed">0</span><span class="speed-unit">KM/H</span></div>
+        <div class="assists-container">
+          <div class="assist-pill active" id="tc-pill"><span class="assist-dot"></span>TC</div>
+          <div class="assist-pill active" id="abs-pill"><span class="assist-dot"></span>ABS</div>
+        </div>
         <div class="pedals">
           <div class="pedal-bar pedal-throttle"><div class="pedal-fill" id="throttle-bar"></div></div>
         </div>
@@ -77,6 +99,10 @@ export function createHud(el) {
 
   const rpmLeds = el.querySelectorAll('.rpm-led');
   const gearEl = el.querySelector('#gear');
+  const transModeEl = el.querySelector('#trans-mode');
+  const shiftHelperEl = el.querySelector('#shift-helper');
+  const tcPillEl = el.querySelector('#tc-pill');
+  const absPillEl = el.querySelector('#abs-pill');
   const speedEl = el.querySelector('#speed');
   const throttleBar = el.querySelector('#throttle-bar');
   const brakeBar = el.querySelector('#brake-bar');
@@ -92,6 +118,13 @@ export function createHud(el) {
   const damageBar = el.querySelector('#damage-bar');
   const gDot = el.querySelector('#g-dot');
   const overlay = el.querySelector('#overlay');
+
+  const spotterLeft = el.querySelector('#spotter-left');
+  const spotterLeftDist = el.querySelector('#spotter-left-dist');
+  const spotterRight = el.querySelector('#spotter-right');
+  const spotterRightDist = el.querySelector('#spotter-right-dist');
+  const spotterRear = el.querySelector('#spotter-rear');
+  const spotterRearDist = el.querySelector('#spotter-rear-dist');
   
   const tireFills = Array.from(el.querySelectorAll('.tire-fill'));
   const tireSlips = Array.from(el.querySelectorAll('.tire-slip'));
@@ -99,6 +132,23 @@ export function createHud(el) {
   let lapStartTime = 0;
   let currentLap = -1;
   let trackBounds = null;
+
+  function updateSpotter(spotterEl, distEl, dist) {
+    if (dist < Infinity && dist <= 6.5) {
+      spotterEl.classList.add('active');
+      distEl.innerText = `${dist.toFixed(1)}m`;
+      if (dist < 2.8) {
+        spotterEl.classList.remove('warning');
+        spotterEl.classList.add('critical');
+      } else {
+        spotterEl.classList.remove('critical');
+        spotterEl.classList.add('warning');
+      }
+    } else {
+      spotterEl.classList.remove('active', 'warning', 'critical');
+      distEl.innerText = '';
+    }
+  }
 
   return {
     update(state) {
@@ -118,17 +168,32 @@ export function createHud(el) {
       const p = state.player;
       if (!p) return;
 
-      // Speed, Gear, Pedals
+      // Speed, Gear, Transmission Mode
       speedEl.innerText = Math.abs(Math.round(p.speedKph || 0));
       let gStr = p.gear === 0 ? 'N' : p.gear === -1 ? 'R' : p.gear;
       gearEl.innerText = gStr;
+
+      const isAuto = p.autoShift !== false;
+      transModeEl.innerText = isAuto ? 'AUTO' : 'MAN';
+      transModeEl.className = 'trans-mode ' + (isAuto ? 'auto' : 'man');
       
-      const maxRpm = 9000;
+      const maxRpm = p.setup?.redline || 9000;
       const rpm = p.rpm || 0;
-      const shiftPoint = 8500;
+      const shiftPoint = maxRpm * 0.93; // ~8370 RPM
+      const atRedline = rpm >= shiftPoint;
       
-      if (rpm > shiftPoint) gearEl.classList.add('shift-flash');
-      else gearEl.classList.remove('shift-flash');
+      // Shift indicator & Redline flash
+      if (atRedline) {
+        gearEl.classList.add('shift-flash');
+        if (!isAuto) {
+          shiftHelperEl.classList.add('visible');
+        } else {
+          shiftHelperEl.classList.remove('visible');
+        }
+      } else {
+        gearEl.classList.remove('shift-flash');
+        shiftHelperEl.classList.remove('visible');
+      }
 
       const rpmRatio = Math.max(0, Math.min(1, rpm / maxRpm));
       const activeLeds = Math.floor(rpmRatio * rpmLeds.length);
@@ -136,7 +201,7 @@ export function createHud(el) {
         led.className = 'rpm-led';
         if (i < activeLeds) {
           led.classList.add('on');
-          if (rpm > shiftPoint) led.classList.add('blue', 'flash');
+          if (atRedline) led.classList.add('blue', 'flash');
           else if (i > rpmLeds.length * 0.8) led.classList.add('red');
           else if (i > rpmLeds.length * 0.5) led.classList.add('yellow');
           else led.classList.add('green');
@@ -147,6 +212,86 @@ export function createHud(el) {
       const brake = p.input?.brake || 0;
       throttleBar.style.height = (throttle * 100) + '%';
       brakeBar.style.height = (brake * 100) + '%';
+
+      // TC & ABS assist indicator status & intervention detection
+      const tcEnabled = p.tcEnabled !== false && p.tc !== false;
+      const absEnabled = p.absEnabled !== false && p.abs !== false;
+
+      // TC intervention: throttle applied + rear wheel slip
+      const rearWheels = p.wheels && p.wheels.length === 4 ? [p.wheels[2], p.wheels[3]] : [];
+      const tcIntervening = tcEnabled && (
+        p.tcIntervening ||
+        (throttle > 0.15 && rearWheels.some(w => Math.abs(w.slipRatio) > 0.18 || Math.abs(w.slipAngle) > 0.22))
+      );
+
+      // ABS intervention: brake applied + wheel lockup / negative slip
+      const absIntervening = absEnabled && (
+        p.absIntervening ||
+        (brake > 0.2 && p.wheels && p.wheels.some(w => w.slipRatio < -0.16 || Math.abs(w.slipRatio) > 0.22))
+      );
+
+      if (!tcEnabled) {
+        tcPillEl.className = 'assist-pill off';
+      } else if (tcIntervening) {
+        tcPillEl.className = 'assist-pill active intervening';
+      } else {
+        tcPillEl.className = 'assist-pill active';
+      }
+
+      if (!absEnabled) {
+        absPillEl.className = 'assist-pill off';
+      } else if (absIntervening) {
+        absPillEl.className = 'assist-pill active intervening';
+      } else {
+        absPillEl.className = 'assist-pill active';
+      }
+
+      // Proximity Spotter Radar
+      if (state.cars && state.cars.length > 1) {
+        let minLeftDist = Infinity;
+        let minRightDist = Infinity;
+        let minRearDist = Infinity;
+
+        const cosH = Math.cos(p.heading || 0);
+        const sinH = Math.sin(p.heading || 0);
+
+        for (let i = 0; i < state.cars.length; i++) {
+          const c = state.cars[i];
+          if (c === p) continue;
+          const cpos = c.pos || c.position;
+          if (!cpos) continue;
+
+          const dx = cpos.x - p.pos.x;
+          const dz = cpos.z - p.pos.z;
+          const dist = Math.hypot(dx, dz);
+          if (dist > 12) continue; // outside radar range
+
+          // Local frame conversion
+          const localForward = dx * cosH - dz * sinH;
+          const localLeft = -(dx * sinH + dz * cosH);
+
+          // Left alongside (within lateral 0.6m - 5.2m, longitudinal -5.5m - 4.5m)
+          if (localLeft > 0.6 && localLeft < 5.2 && localForward > -5.5 && localForward < 4.5) {
+            if (dist < minLeftDist) minLeftDist = dist;
+          }
+          // Right alongside (within lateral -5.2m - -0.6m, longitudinal -5.5m - 4.5m)
+          if (localLeft < -0.6 && localLeft > -5.2 && localForward > -5.5 && localForward < 4.5) {
+            if (dist < minRightDist) minRightDist = dist;
+          }
+          // Rear warning (within lateral +-3.2m, longitudinal -8.0m - -0.5m)
+          if (localForward >= -8.0 && localForward <= -0.5 && Math.abs(localLeft) < 3.2) {
+            if (dist < minRearDist) minRearDist = dist;
+          }
+        }
+
+        updateSpotter(spotterLeft, spotterLeftDist, minLeftDist);
+        updateSpotter(spotterRight, spotterRightDist, minRightDist);
+        updateSpotter(spotterRear, spotterRearDist, minRearDist);
+      } else {
+        updateSpotter(spotterLeft, spotterLeftDist, Infinity);
+        updateSpotter(spotterRight, spotterRightDist, Infinity);
+        updateSpotter(spotterRear, spotterRearDist, Infinity);
+      }
 
       // Timing
       if (p.lap !== currentLap) {

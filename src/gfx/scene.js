@@ -52,14 +52,14 @@ export function buildScene(canvas) {
 
   const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 2000);
 
-  // Lighting: warm sun + cool sky fill
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x4a5b3f, 0.5);
+  // Lighting: warm sun + cool sky fill + subtle bounce light
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x4a5b3f, 0.55);
   hemi.color.setHSL(0.6, 0.75, 0.85);
   hemi.groundColor.setHSL(0.095, 0.5, 0.5);
   hemi.position.set(0, 50, 0);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xffffff, 2.5);
+  const sun = new THREE.DirectionalLight(0xffffff, 2.6);
   sun.color.setHSL(0.1, 1, 0.95);
   sun.position.set(120, 160, 80);
   sun.castShadow = true;
@@ -75,6 +75,11 @@ export function buildScene(canvas) {
   sun.shadow.bias = -0.0005;
   scene.add(sun);
   scene.add(sun.target);
+
+  // Soft sky fill light for shadows and trackside props
+  const fillLight = new THREE.DirectionalLight(0xaad4f5, 0.45);
+  fillLight.position.set(-100, 70, -90);
+  scene.add(fillLight);
 
   function resize() {
     camera.aspect = window.innerWidth / window.innerHeight;

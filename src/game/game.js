@@ -23,7 +23,7 @@ export function createGame(canvas) {
   // Track + environment
   const track = buildTrack(alpineDef);
   scene.add(track.mesh);
-  buildEnvironment(track, scene);
+  const env = buildEnvironment(track, scene);
   state.track = track;
 
   // Cars: player + a few AI placeholders
@@ -95,10 +95,17 @@ export function createGame(canvas) {
         player.input.throttle = pi.throttle;
         player.input.brake = pi.brake;
         player.input.steer = pi.steer;
+        player.input.gearRequest = pi.gearRequest;
+        if (bi.shiftUp) player.shiftUp?.();
+        if (bi.shiftDown) player.shiftDown?.();
+        if (bi.toggleTransmission) player.toggleTransmission?.();
+        if (bi.toggleTC) player.toggleTC?.();
+        if (bi.toggleABS) player.toggleABS?.();
       } else {
         player.input.throttle = 0;
         player.input.brake = 1;
         player.input.steer = 0;
+        player.input.gearRequest = 0;
       }
 
       // AI racecraft (P5)
@@ -106,6 +113,9 @@ export function createGame(canvas) {
 
       // Race orchestration (P6)
       updateRace(race, dt);
+
+      // Environment props update (wind turbines, flags)
+      if (env && env.update) env.update(dt);
 
       // Fixed-step physics
       this._acc += dt;
@@ -141,6 +151,13 @@ export function createGame(canvas) {
 
     render() {
       renderer.render(scene, camera);
+    },
+
+    dispose() {
+      input.dispose?.();
+      sound.dispose?.();
+      env.dispose?.();
+      renderer.dispose?.();
     },
   };
 
