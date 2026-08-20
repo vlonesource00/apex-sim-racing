@@ -394,89 +394,85 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     const fwd = dx * cosH - dz * sinH;
     const latO = -dx * sinH - dz * cosH;
     const closingSpeed = v - (o.speed || 0);
+    const inDirectPath = Math.abs(latO) < 1.45; // True direct rear-end alignment
 
-    // 1. Forward Time-to-Collision (TTC) Radar & Anti-Crash Emergency Braking
-    // Scan vehicles ahead within 35m in forward sector (|latO| < 2.4m)
-    if (fwd > 0 && fwd < 35 && Math.abs(latO) < 2.4) {
-      if (closingSpeed > 1.0 && fwd < 25) {
-        const ttc = fwd / closingSpeed;
-        if (ttc < 1.4) {
-          const eBrake = clamp((1.4 - ttc) * 1.5, 0.4, 1.0);
-          maxEmergencyBrake = Math.max(maxEmergencyBrake, eBrake);
-          avoidanceActive = true;
+    // 1. Slipstream Drafting & High-Speed Tow (fwd: 5m to 45m)
+    if (fwd > 5.0 && fwd < 45.0 && Math.abs(latO) < 3.2) {
+      draftMod = Math.max(draftMod, arch.draftSpeedBoost || 1.08);
+      driver.draftTimer = Math.min(2.5, (driver.draftTimer || 0) + dt * 1.5);
 
-          // Evasive lane shift towards open track space with boundary safety check
-          let shiftDir = latO >= 0 ? -1.8 : 1.8;
-          if (shiftDir < 0 && (currentLateral < -halfTrackWidth + 1.8)) shiftDir = 1.8;
-          else if (shiftDir > 0 && (currentLateral > halfTrackWidth - 1.8)) shiftDir = -1.8;
-          targetOvertakeLat = shiftDir;
+      // Opportunistic Passing Lane Commitment:
+      // When closing on the car ahead, pick open side of track and commit to passing lane!
+      if (fwd < 30.0) {
+        let passSide = latO >= 0 ? -2.2 : 2.2;
+        // Prefer inside lane if approaching a corner
+        if (isUpcomingCorner && insideDir !== 0) {
+          passSide = insideDir * (arch.yieldLat ? Math.abs(arch.yieldLat) : 2.2);
         }
-      }
+        // Validate track boundary
+        if (passSide < 0 && (currentLateral < -halfTrackWidth + 1.8)) passSide = 2.2;
+        else if (passSide > 0 && (currentLateral > halfTrackWidth - 1.8)) passSide = -2.2;
 
-      // Close-range proximity buffer (ensures no rear-end contact even at matched speed)
-      if (fwd < 5.5 && closingSpeed > -0.5) {
-        const proxBrake = clamp((5.5 - fwd) / 4.0, 0.3, 0.9);
-        maxEmergencyBrake = Math.max(maxEmergencyBrake, proxBrake);
-        avoidanceActive = true;
-        if (targetOvertakeLat === 0) {
-          let shiftDir = latO >= 0 ? -1.8 : 1.8;
-          if (shiftDir < 0 && (currentLateral < -halfTrackWidth + 1.8)) shiftDir = 1.8;
-          else if (shiftDir > 0 && (currentLateral > halfTrackWidth - 1.8)) shiftDir = -1.8;
-          targetOvertakeLat = shiftDir;
-        }
-      }
-
-      // Traffic speed modulation: pace behind leading car in braking zones
-      if (fwd > 5.0 && fwd < 32.0) {
-        const leadBraking = (o.input && o.input.brake > 0.15) || isUpcomingCorner;
-        if (leadBraking || closingSpeed > 0.5) {
-          const paceRatio = clamp((fwd - 4.5) / 24.0, 0.65, 1.0);
-          slowFactor = Math.min(slowFactor, paceRatio);
-        }
-      }
-    }
-
-    // 2. Slipstream Drafting & Slingshot Overtakes
-    if (fwd > 6 && fwd < 40 && Math.abs(latO) < 2.0 && !avoidanceActive) {
-      draftMod = Math.max(draftMod, arch.draftSpeedBoost || 1.05);
-      driver.draftTimer = (driver.draftTimer || 0) + dt;
-
-      // Initiate slingshot pullout to inside lane when closing or approaching braking zone
-      if (fwd < 22 && (closingSpeed > 1.0 || isUpcomingCorner)) {
+        targetOvertakeLat = passSide;
         driver.slingshotActive = true;
-        targetOvertakeLat = insideDir !== 0 ? insideDir * (arch.yieldLat || -1.8) : (latO > 0 ? -1.8 : 1.8);
       }
-    } else if (!avoidanceActive) {
-      driver.draftTimer = Math.max(0, (driver.draftTimer || 0) - dt);
+    } else {
+      driver.draftTimer = Math.max(0, (driver.draftTimer || 0) - dt * 2.0);
       if (driver.draftTimer <= 0) driver.slingshotActive = false;
     }
 
-    // 3. Late-Braking Divebombs (Alex Viper & Elena Rocket)
-    if (isUpcomingCorner && fwd > 2 && fwd < 18 && closingSpeed > 0.8 && !avoidanceActive) {
-      if (arch.diveAggression && arch.diveAggression > 0.8) {
+    // 2. Late-Braking Divebombs (Alex "Viper", Elena "Rocket", Marco "The Surgeon")
+    if (isUpcomingCorner && fwd > 2.0 && fwd < 24.0 && closingSpeed > 0.3) {
+      if ((arch.diveAggression || 1.0) > 0.6) {
         driver.divebombActive = true;
-        targetOvertakeLat = insideDir * (arch.yieldLat || -2.0);
+        const diveLat = insideDir !== 0 ? insideDir * (arch.yieldLat ? Math.abs(arch.yieldLat) : 2.2) : (latO >= 0 ? -2.2 : 2.2);
+        targetOvertakeLat = diveLat;
       }
-    } else if (!avoidanceActive) {
+    } else {
       driver.divebombActive = false;
     }
 
-    // 4. Defensive Line Covering (Viktor Steiner & Marco Rossi)
-    if (fwd > -20 && fwd < -2 && Math.abs(latO) < 3.0 && !avoidanceActive) {
-      if (isUpcomingCorner && arch.defenseAggression > 0.5) {
-        targetDefendLat = insideDir * (1.2 * (arch.defenseAggression || 1.0));
+    // 3. Defensive Line Covering (Viktor "The Wall", Marco "The Surgeon")
+    if (fwd > -25.0 && fwd < -2.0 && Math.abs(latO) < 3.5) {
+      if (isUpcomingCorner && (arch.defenseAggression || 0) > 0.5) {
+        targetDefendLat = insideDir !== 0 ? insideDir * (1.4 * (arch.defenseAggression || 1.0)) : (latO > 0 ? 1.4 : -1.4);
       }
     }
 
-    // 5. Side-by-Side Spatial Clearance (2.0m Dynamic Corridor)
-    if (Math.abs(fwd) < 4.5 && Math.abs(latO) < 2.4) {
+    // 4. Side-by-Side Wheel-to-Wheel Spatial Clearance (2.0m Dynamic Corridor)
+    if (Math.abs(fwd) < 4.8 && Math.abs(latO) < 2.4) {
       const overlap = clamp(2.4 - Math.abs(latO), 0, 2.0);
       if (latO > 0) {
-        // Opponent on left -> enforce lateral corridor by yielding right
-        targetYieldLat -= Math.max(overlap * 0.8, 0.5);
+        // Opponent on left -> hold right lane
+        targetYieldLat -= Math.max(overlap * 0.75, 0.4);
       } else {
-        // Opponent on right -> enforce lateral corridor by yielding left
-        targetYieldLat += Math.max(overlap * 0.8, 0.5);
+        // Opponent on right -> hold left lane
+        targetYieldLat += Math.max(overlap * 0.75, 0.4);
+      }
+    }
+
+    // 5. Anti-Crash Emergency TTC Radar (Only when directly in collision path)
+    if (fwd > 0.8 && fwd < 20.0 && inDirectPath) {
+      if (closingSpeed > 1.5 && fwd < 18.0) {
+        const ttc = fwd / closingSpeed;
+        if (ttc < 0.95) {
+          const eBrake = clamp((0.95 - ttc) * 1.8, 0.4, 1.0);
+          maxEmergencyBrake = Math.max(maxEmergencyBrake, eBrake);
+          avoidanceActive = true;
+          if (targetOvertakeLat === 0) {
+            targetOvertakeLat = latO >= 0 ? -2.2 : 2.2;
+          }
+        }
+      }
+
+      // Point-blank rear proximity buffer (< 3.8m directly behind)
+      if (fwd < 3.8 && closingSpeed > 0) {
+        const proxBrake = clamp((3.8 - fwd) / 2.5, 0.3, 0.85);
+        maxEmergencyBrake = Math.max(maxEmergencyBrake, proxBrake);
+        avoidanceActive = true;
+        if (targetOvertakeLat === 0) {
+          targetOvertakeLat = latO >= 0 ? -2.2 : 2.2;
+        }
       }
     }
 
@@ -510,8 +506,8 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     driver.pressureTimer = Math.max(0, (driver.pressureTimer || 0) - dt * 1.5);
   }
 
-  // Smooth filter dynamic offsets
-  const filterRate = clamp(dt * (avoidanceActive ? 8.0 : 4.5), 0, 1);
+  // Smooth filter dynamic offsets with agile steering response
+  const filterRate = clamp(dt * (avoidanceActive || driver.slingshotActive ? 7.5 : 4.5), 0, 1);
   driver.defendLat += (targetDefendLat - driver.defendLat) * filterRate;
   driver.overtakeLat += (targetOvertakeLat - driver.overtakeLat) * filterRate;
   driver.yieldLat += (targetYieldLat - driver.yieldLat) * filterRate;
@@ -701,13 +697,16 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     currentSpeed: v * 3.6,           // km/h
     lookaheadDist: look,             // meters
     mode: driver.stabilizationTimer > 0 ? 'STABILIZING' :
-          driver.emergencyBrake > 0.1 ? 'EMERGENCY_BRAKE' :
+          driver.emergencyBrake > 0.15 ? 'EMERGENCY_BRAKE' :
+          driver.divebombActive ? 'DIVEBOMB' :
+          driver.slingshotActive ? 'SLINGSHOT' :
+          Math.abs(driver.overtakeLat) > 0.4 ? 'OVERTAKING' :
+          Math.abs(driver.defendLat) > 0.3 ? 'DEFENDING' :
+          driver.draftTimer > 0.05 ? 'DRAFTING' :
           driver.avoidanceActive ? 'EVADING' :
           driver.understeerCorrecting ? 'ANTI_UNDERSTEER' :
-          driver.slingshotActive ? 'SLINGSHOT' :
-          driver.divebombActive ? 'DIVEBOMB' :
-          driver.draftTimer > 0.5 ? 'DRAFTING' :
-          driver.defendLat !== 0 ? 'DEFENDING' :
+          car.input.throttle > 0.85 ? 'FULL THROTTLE' :
+          (Math.abs(car.input.steer) > 0.12 || Math.abs(pt.k) > 0.006) ? 'CORNERING' :
           driver.mistakeType ? `MISTAKE (${driver.mistakeType})` : 'CRUISING',
     defendLat: driver.defendLat || 0,
     overtakeLat: driver.overtakeLat || 0,
