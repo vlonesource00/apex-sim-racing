@@ -147,7 +147,7 @@ export function buildTrack(def) {
       if (samples[mid].s < t) lo = mid + 1; else hi = mid;
     }
     const i = lo, sm = samples[i];
-    return { pos: sm.pos, dir: sm.dir, left: sm.left, width: sm.width, idx: i };
+    return { pos: sm.pos, dir: sm.dir, left: sm.left, width: sm.width, idx: i, s: sm.s };
   }
 
   function heightAt(x, z) {

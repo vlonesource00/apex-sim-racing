@@ -99,8 +99,6 @@ export function createGame(canvas) {
         player.input.brake = pi.brake;
         player.input.steer = pi.steer;
         player.input.gearRequest = pi.gearRequest;
-        if (bi.shiftUp) player.shiftUp?.();
-        if (bi.shiftDown) player.shiftDown?.();
         if (bi.toggleTransmission) player.toggleTransmission?.();
         if (bi.toggleTC) player.toggleTC?.();
         if (bi.toggleABS) player.toggleABS?.();

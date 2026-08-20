@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { computeRacingLine } from '../ai/aiDriver.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
@@ -50,65 +51,8 @@ function getDriverForCar(car, drivers) {
 function getRacingLineData(track) {
   if (track._racingLine) return track._racingLine;
   if (track.racingLine) return track.racingLine;
-  const S = track.samples;
-  if (!S || S.length === 0) return null;
-
-  const n = S.length;
-  const curv = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const a = S[i].dir, b = S[(i + 2) % n].dir;
-    let d = Math.atan2(b.y, b.x) - Math.atan2(a.y, a.x);
-    while (d > Math.PI) d -= 2 * Math.PI;
-    while (d < -Math.PI) d += 2 * Math.PI;
-    const ds = Math.max(S[(i + 2) % n].s - S[i].s, 1);
-    curv[i] = Math.abs(d) / ds;
-  }
-
-  const sm = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    let acc = 0;
-    for (let k = -2; k <= 2; k++) acc += curv[(i + k + n) % n];
-    sm[i] = acc / 5;
-  }
-
-  const vT = new Float32Array(n);
-  for (let i = 0; i < n; i++) vT[i] = Math.min(75, Math.sqrt(7.5 / Math.max(sm[i], 1e-5)));
-
-  for (let iter = 0; iter < 3; iter++) {
-    for (let i = n - 2; i >= 0; i--) {
-      const ds = S[(i + 1) % n].s - S[i].s || 2;
-      vT[i] = Math.min(vT[i], Math.sqrt(vT[i + 1] ** 2 + 2 * 9.8 * Math.abs(ds)));
-    }
-    const wrap = Math.sqrt(vT[0] ** 2 + 2 * 9.8 * (track.length - S[n - 1].s));
-    vT[n - 1] = Math.min(vT[n - 1], wrap);
-    for (let i = 0; i < n - 1; i++) {
-      const ds = S[i + 1].s - S[i].s || 2;
-      vT[i + 1] = Math.min(vT[i + 1], Math.sqrt(vT[i] ** 2 + 2 * (9.5 - vT[i] * 0.09) * ds));
-    }
-  }
-
-  const sc = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const a = S[i].dir, b = S[(i + 3) % n].dir;
-    let d = Math.atan2(b.y, b.x) - Math.atan2(a.y, a.x);
-    while (d > Math.PI) d -= 2 * Math.PI;
-    while (d < -Math.PI) d += 2 * Math.PI;
-    sc[i] = d / Math.max(S[(i + 3) % n].s - S[i].s, 1);
-  }
-
-  const lat = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const gate = clamp(Math.abs(sc[i]) * 90, 0, 1);
-    lat[i] = clamp(sc[i] * 90, -1, 1) * gate;
-  }
-  for (let p = 0; p < 15; p++) {
-    for (let i = 0; i < n; i++) {
-      lat[i] = (lat[(i - 2 + n) % n] + lat[(i - 1 + n) % n] + lat[i] * 2 + lat[(i + 1) % n] + lat[(i + 2) % n]) / 6;
-    }
-  }
-  for (let i = 0; i < n; i++) lat[i] = clamp(lat[i] * (S[i].width / 2 - 1.4), -(S[i].width / 2 - 1.5), S[i].width / 2 - 1.5);
-
-  return { lat, vT, curv: sm, scurv: sc };
+  track._racingLine = computeRacingLine(track);
+  return track._racingLine;
 }
 
 /**

@@ -11,6 +11,7 @@ const car = createCar(getSetup('gt3'), {});
 const s0 = track.sampleAt(track.startS);
 car.pos.set(s0.pos.x, s0.pos.y, s0.pos.z);
 car.heading = Math.atan2(-s0.dir.y, s0.dir.x);
+car.progressS = s0.s;
 const drv = createAiDriver(car, track, 1);
 drv.offset = 0;
 drv._brakeNoise = 1.0;
