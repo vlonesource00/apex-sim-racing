@@ -12,6 +12,7 @@ import { createRace, updateRace } from '../race/raceManager.js';
 import { createSound } from '../audio/sound.js';
 import { buildEnvironment } from '../gfx/environment.js';
 import { createEffects } from '../gfx/effects.js';
+import { createDebugVisualizer } from '../gfx/debugVisualizer.js';
 import { state } from './state.js';
 
 export const PHYS_DT = 1 / 240;
@@ -59,12 +60,13 @@ export function createGame(canvas) {
   state.race = race;
   const sound = createSound();
   const fx = createEffects(scene);
+  const debugVisualizer = createDebugVisualizer(scene, track, cars);
 
   // Sun follows player for stable shadows
   const sun = gfx.sun;
 
   const game = {
-    scene, camera, renderer, track, cars, player, rig, input, meshes,
+    scene, camera, renderer, track, cars, player, rig, input, meshes, debugVisualizer,
     _acc: 0,
     _last: performance.now(),
 
@@ -81,6 +83,7 @@ export function createGame(canvas) {
       if (bi.camera) cycleCamera();
       if (bi.reset) game.reset();
       if (bi.pause) state.mode = state.mode === 'paused' ? 'racing' : 'paused';
+      if (bi.toggleDebug) window.dispatchEvent(new CustomEvent('apex:toggle-debug'));
 
       if (state.mode === 'countdown') {
         state.countdown -= dt;
@@ -132,6 +135,11 @@ export function createGame(canvas) {
       // Effects (P10)
       fx.update(cars, dt);
 
+      // 3D Debug Visualizer update
+      if (debugVisualizer && debugVisualizer.update) {
+        debugVisualizer.update(dt, state);
+      }
+
       // Camera
       updateCameraRig(rig, player, dt, state.cameraMode);
 
@@ -157,6 +165,8 @@ export function createGame(canvas) {
       input.dispose?.();
       sound.dispose?.();
       env.dispose?.();
+      debugVisualizer.dispose?.();
+      for (const m of meshes.values()) m.dispose?.();
       renderer.dispose?.();
     },
   };

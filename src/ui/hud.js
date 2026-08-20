@@ -94,8 +94,18 @@ export function createHud(el) {
       </div>
     </div>
 
+    <button class="hud-debug-btn" id="hud-debug-btn" title="Toggle Fleet Inspector [U / \`]">DEBUG</button>
+
     <div class="overlay-center" id="overlay"></div>
   `;
+
+  const debugBtn = el.querySelector('#hud-debug-btn');
+  if (debugBtn) {
+    debugBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.dispatchEvent(new CustomEvent('apex:toggle-debug'));
+    });
+  }
 
   const rpmLeds = el.querySelectorAll('.rpm-led');
   const gearEl = el.querySelector('#gear');

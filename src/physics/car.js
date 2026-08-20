@@ -259,21 +259,24 @@ export function stepCar(car, track, dt) {
     syncRpmAfterShift(car, car.gear < gearBefore);
   }
 
-  // Engine speed integrated with its own inertia
-  const engineTorque = isNeutral ? 0 : s.torqueCurve(car.rpm) * throttle;
-  const driveReactionPrev = driveRear
-    ? car.wheels[2].fx + car.wheels[3].fx
-    : car.wheels[0].fx + car.wheels[1].fx;
-  const tLoad = ratioTotal > 0 ? (driveReactionPrev * s.wheelRadius) / ratioTotal : 0;
-  const tFric = (18 + car.rpm * 0.012) * (throttle > 0.05 ? 0.35 : 1);
-  let we = (car.rpm * TWO_PI) / 60 + ((engineTorque - tLoad - tFric) / (s.engineInertia ?? 0.28)) * dt;
-  if (ratioTotal > 0) {
-    we = Math.max(we, Math.abs(driveOmegaWheel) * ratioTotal);
+  // Engine RPM and Drivetrain coupling
+  const engineTorque = s.torqueCurve(car.rpm) * throttle;
+  if (isNeutral) {
+    const tFric = (18 + car.rpm * 0.012) * (throttle > 0.05 ? 0.35 : 1);
+    let we = (car.rpm * TWO_PI) / 60 + ((engineTorque - tFric) / (s.engineInertia ?? 0.28)) * dt;
+    we = clamp(we, (s.idleRpm * TWO_PI) / 60, ((s.redline + 250) * TWO_PI) / 60);
+    car.rpm = (we * 60) / TWO_PI;
+  } else {
+    const wheelRpm = (Math.abs(driveOmegaWheel) * ratioTotal * 60) / TWO_PI;
+    if (car._blipTimer > 0) {
+      // Throttle blip rev-matching smoothly decays towards wheel speed
+      car.rpm = clamp(Math.max(wheelRpm, car.rpm - (car.rpm - wheelRpm) * clamp(dt * 10, 0, 1)), s.idleRpm, s.redline);
+    } else {
+      car.rpm = clamp(Math.max(s.idleRpm, wheelRpm), s.idleRpm, s.redline + 250);
+    }
   }
-  we = clamp(we, (s.idleRpm * TWO_PI) / 60, ((s.redline + 250) * TWO_PI) / 60);
-  car.rpm = (we * 60) / TWO_PI;
 
-  const shaftTorque = isReverse ? -engineTorque * ratioTotal : engineTorque * ratioTotal;
+  const shaftTorque = isNeutral ? 0 : isReverse ? -engineTorque * ratioTotal : engineTorque * ratioTotal;
   const drivePerWheel = ratioTotal > 0 ? shaftTorque / (s.driveWheels === 'all' ? 4 : 2) : 0;
 
   // Differential Locking (LSD) on Rear Axle
@@ -353,7 +356,8 @@ export function stepCar(car, track, dt) {
     w.fx = fx;
     w.fy = fy;
     // wheelspin / lockup metrics for fx, sound, rpm feel
-    w.slipRatio = Freq > 0 ? clamp((Freq - fx) / (D + 1), 0, 1.5) : -clamp((-Freq - fx) / (D + 1), 0, 1.5);
+    const excess = Math.max(0, Math.abs(Freq) - Math.abs(fx));
+    w.slipRatio = Math.sign(Freq) * clamp(excess / (D + 1), 0, 1.5);
     w.omega = (vxw * (1 - clamp(-w.slipRatio, 0, 1) * 0.95) + clamp(w.slipRatio, 0, 1.5) * 4) / s.wheelRadius;
     w.spin += w.omega * dt;
 

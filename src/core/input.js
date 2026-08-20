@@ -9,6 +9,7 @@ export function createInput() {
       pause: false, camera: false, reset: false,
       shiftUp: false, shiftDown: false,
       toggleTransmission: false, toggleTC: false, toggleABS: false,
+      toggleDebug: false,
     },
     _prevPause: false, _prevCam: false, _prevReset: false,
   };
@@ -16,6 +17,7 @@ export function createInput() {
   let camToggle = false, pauseToggle = false, resetToggle = false;
   let shiftUpReq = false, shiftDownReq = false;
   let transToggleReq = false, tcToggleReq = false, absToggleReq = false;
+  let debugToggleReq = false;
 
   let prevPadLB = false, prevPadRB = false;
 
@@ -34,6 +36,7 @@ export function createInput() {
       if (e.code === 'KeyT') transToggleReq = true;
       if (e.code === 'KeyF') tcToggleReq = true;
       if (e.code === 'KeyB') absToggleReq = true;
+      if (e.code === 'KeyU' || e.code === 'Backquote') debugToggleReq = true;
     }
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
       e.preventDefault();
@@ -95,6 +98,7 @@ export function createInput() {
     state.buttons.toggleTransmission = transToggleReq;
     state.buttons.toggleTC = tcToggleReq;
     state.buttons.toggleABS = absToggleReq;
+    state.buttons.toggleDebug = debugToggleReq;
 
     // Export gearRequest in state
     if (shiftUpReq) state.gearRequest = 1;
@@ -105,6 +109,7 @@ export function createInput() {
     transToggleReq = false;
     tcToggleReq = false;
     absToggleReq = false;
+    debugToggleReq = false;
   }
 
   function getDriverInput() {

@@ -239,6 +239,7 @@ export function createAiDriver(car, track, skill = 1, archetype = null) {
     draftTimer: 0,
     slingshotActive: false,
     divebombActive: false,
+    _debugState: null,
   };
 
   if (car) car._aiDriver = driver;
@@ -259,11 +260,12 @@ function linePoint(driver, s, lateralOffset = 0) {
   const rawLat = line.lat[i] + (line.lat[j] - line.lat[i]) * f + driver.offset + lateralOffset;
   const latI = clamp(rawLat, -maxLat, maxLat);
   const px = a.pos.x + (b.pos.x - a.pos.x) * f + a.left.x * latI;
+  const py = (a.pos.y || 0) + ((b.pos.y || 0) - (a.pos.y || 0)) * f;
   const pz = a.pos.z + (b.pos.z - a.pos.z) * f + a.left.y * latI;
   const v = line.vT[i] + (line.vT[j] - line.vT[i]) * f;
   const k = line.scurv[i] + (line.scurv[j] - line.scurv[i]) * f;
   const curvAbs = line.curv[i] + (line.curv[j] - line.curv[i]) * f;
-  return { x: px, z: pz, v, k, curvAbs, idx: i, lateral: latI, maxLat };
+  return { x: px, y: py, z: pz, pos: { x: px, y: py, z: pz }, v, k, curvAbs, idx: i, lateral: latI, maxLat };
 }
 
 function getObs(car, track, line) {
@@ -334,7 +336,7 @@ export function updateAiDriver(driver, cars, dt, active = true) {
   const insideDir = upcomingCurv > 0 ? 1.0 : upcomingCurv < 0 ? -1.0 : 0;
 
   for (const o of cars) {
-    if (o === car) continue;
+    if (!o || o === car || !o.pos) continue;
     const dx = o.pos.x - car.pos.x, dz = o.pos.z - car.pos.z;
     const fwd = dx * cosH - dz * sinH;
     const latO = -dx * sinH - dz * cosH;
@@ -445,6 +447,15 @@ export function updateAiDriver(driver, cars, dt, active = true) {
 
   const pt = linePoint(driver, car.progressS + look, totalExtraLat);
 
+  // Target speed calculation with archetype braking, divebombs, mistakes, and lookahead
+  let brakeFactor = driver._brakeNoise;
+  if (driver.mistakeType === 'lateBrake') brakeFactor *= 1.05;
+  const cornerSpeed = Math.min(1.0, arch.cornerSpeedFactor || 1.0);
+
+  let vTarg = pt.v * brakeFactor * slowFactor * skill * draftMod * cornerSpeed;
+  const ahead2 = linePoint(driver, car.progressS + look + 20, totalExtraLat);
+  vTarg = Math.min(vTarg, Math.sqrt(ahead2.v ** 2 + 2 * ABRAKE * 20) * slowFactor * skill * draftMod);
+
   if (!useFallback && policy && policy.trained) {
     const action = evaluatePolicy(policy, obs);
     const dxT = pt.x - car.pos.x, dzT = pt.z - car.pos.z;
@@ -455,13 +466,6 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     const ff = pt.k * car.setup.wheelbase / 0.45;
     const algoSteer = clamp(err * 2.2 - car.yawRate * 0.10 + ff, -1, 1);
 
-    let brakeFactor = driver._brakeNoise;
-    if (driver.mistakeType === 'lateBrake') brakeFactor *= 1.05;
-    const cornerSpeed = Math.min(1.0, arch.cornerSpeedFactor || 1.0);
-
-    let vTarg = pt.v * brakeFactor * slowFactor * skill * draftMod * cornerSpeed;
-    const ahead2 = linePoint(driver, car.progressS + look + 20, totalExtraLat);
-    vTarg = Math.min(vTarg, Math.sqrt(ahead2.v ** 2 + 2 * ABRAKE * 20) * slowFactor * skill * draftMod);
     const dv = vTarg - v;
     let algoThrottle = 0, algoBrake = 0;
     if (dv > 0.5) { algoThrottle = clamp(dv * 0.35, 0.25, 1); }
@@ -472,57 +476,67 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     car.input.steer = clamp(algoSteer * (1 - blend) + action.steer * blend, -1, 1);
     car.input.throttle = clamp((algoThrottle * (1 - blend) + action.throttle * blend) * skill * draftMod, 0, 1);
     car.input.brake = clamp((algoBrake * (1 - blend) + action.brake * blend) * (2 - skill), 0, 1);
-    return;
-  }
-
-  // --- Algorithmic Racecraft Controller ---
-  const dxT = pt.x - car.pos.x, dzT = pt.z - car.pos.z;
-  const target = Math.atan2(-dzT, dxT);
-  let err = target - car.heading;
-  while (err > Math.PI) err -= 2 * Math.PI;
-  while (err < -Math.PI) err += 2 * Math.PI;
-
-  const ff = pt.k * car.setup.wheelbase / 0.45;
-  const steer = clamp(err * 2.2 - car.yawRate * 0.10 + ff, -1, 1);
-  car.input.steer = steer;
-
-  // Target speed calculation with archetype braking, divebombs, mistakes, and lookahead
-  let brakeFactor = driver._brakeNoise;
-  if (driver.mistakeType === 'lateBrake') brakeFactor *= 1.05; // Late brake mistake
-  const cornerSpeed = Math.min(1.0, arch.cornerSpeedFactor || 1.0);
-
-  let vTarg = pt.v * brakeFactor * slowFactor * skill * draftMod * cornerSpeed;
-  const ahead2 = linePoint(driver, car.progressS + look + 20, totalExtraLat);
-  vTarg = Math.min(vTarg, Math.sqrt(ahead2.v ** 2 + 2 * ABRAKE * 20) * slowFactor * skill * draftMod);
-
-  const dv = vTarg - v;
-  if (dv > 0.5) {
-    let throttle = clamp(dv * 0.35, 0.25, 1.0);
-    // Smooth progressive throttle application for precision drivers
-    if (arch.throttleAggression && arch.throttleAggression < 1.0) {
-      throttle *= arch.throttleAggression;
-    }
-    if (driver.mistakeType === 'hesitation') {
-      throttle *= 0.65; // Throttle hesitation mistake
-    }
-    car.input.throttle = clamp(throttle * (draftMod > 1 ? 1.05 : 1.0), 0, 1);
-    car.input.brake = 0;
-  } else if (dv < -0.5) {
-    let brake = clamp(-dv * 0.22, 0.15, 1.0);
-    // Deep trail-braking for daring late-brakers (Elena Rocket)
-    if (arch.trailBrakeMod && Math.abs(steer) > 0.12) {
-      brake = clamp(brake * (1.0 - Math.abs(steer) * 0.28), 0.12, 1.0);
-    }
-    car.input.throttle = 0;
-    car.input.brake = brake;
   } else {
-    let cruiseThrottle = 0.3 * (arch.throttleAggression || 1.0);
-    if (driver.mistakeType === 'hesitation') cruiseThrottle *= 0.65;
-    car.input.throttle = cruiseThrottle;
-    car.input.brake = 0;
+    // --- Algorithmic Racecraft Controller ---
+    const dxT = pt.x - car.pos.x, dzT = pt.z - car.pos.z;
+    const target = Math.atan2(-dzT, dxT);
+    let err = target - car.heading;
+    while (err > Math.PI) err -= 2 * Math.PI;
+    while (err < -Math.PI) err += 2 * Math.PI;
+
+    const ff = pt.k * car.setup.wheelbase / 0.45;
+    const steer = clamp(err * 2.2 - car.yawRate * 0.10 + ff, -1, 1);
+    car.input.steer = steer;
+
+    const dv = vTarg - v;
+    if (dv > 0.5) {
+      let throttle = clamp(dv * 0.35, 0.25, 1.0);
+      // Smooth progressive throttle application for precision drivers
+      if (arch.throttleAggression && arch.throttleAggression < 1.0) {
+        throttle *= arch.throttleAggression;
+      }
+      if (driver.mistakeType === 'hesitation') {
+        throttle *= 0.65; // Throttle hesitation mistake
+      }
+      car.input.throttle = clamp(throttle * (draftMod > 1 ? 1.05 : 1.0), 0, 1);
+      car.input.brake = 0;
+    } else if (dv < -0.5) {
+      let brake = clamp(-dv * 0.22, 0.15, 1.0);
+      // Deep trail-braking for daring late-brakers (Elena Rocket)
+      if (arch.trailBrakeMod && Math.abs(steer) > 0.12) {
+        brake = clamp(brake * (1.0 - Math.abs(steer) * 0.28), 0.12, 1.0);
+      }
+      car.input.throttle = 0;
+      car.input.brake = brake;
+    } else {
+      let cruiseThrottle = 0.3 * (arch.throttleAggression || 1.0);
+      if (driver.mistakeType === 'hesitation') cruiseThrottle *= 0.65;
+      car.input.throttle = cruiseThrottle;
+      car.input.brake = 0;
+    }
+
+    // Traction control on wheelspin
+    const spin = Math.max(car.wheels?.[2]?.slipRatio ?? 0, car.wheels?.[3]?.slipRatio ?? 0);
+    if (spin > 0.12) car.input.throttle *= 0.6;
   }
 
-  // Traction control on wheelspin
-  const spin = Math.max(car.wheels?.[2]?.slipRatio ?? 0, car.wheels?.[3]?.slipRatio ?? 0);
-  if (spin > 0.12) car.input.throttle *= 0.6;
+  driver._debugState = {
+    targetPos: { x: pt.pos.x, y: pt.pos.y, z: pt.pos.z },
+    targetSpeed: vTarg * 3.6,        // km/h
+    currentSpeed: v * 3.6,           // km/h
+    lookaheadDist: look,             // meters
+    mode: driver.slingshotActive ? 'SLINGSHOT' :
+          driver.divebombActive ? 'DIVEBOMB' :
+          driver.draftTimer > 0.5 ? 'DRAFTING' :
+          driver.defendLat !== 0 ? 'DEFENDING' :
+          driver.mistakeType ? `MISTAKE (${driver.mistakeType})` : 'CRUISING',
+    defendLat: driver.defendLat || 0,
+    overtakeLat: driver.overtakeLat || 0,
+    yieldLat: driver.yieldLat || 0,
+    mistakeLat: driver.mistakeLat || 0,
+    totalExtraLat: totalExtraLat || 0,
+    draftSpeedBoost: driver.slingshotActive ? arch.draftSpeedBoost : 1.0,
+    archetype: arch.name,
+    badge: arch.badge,
+  };
 }

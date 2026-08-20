@@ -2,6 +2,7 @@ import { createGame } from './game/game.js';
 import { state } from './game/state.js';
 import { createHud } from './ui/hud.js';
 import { createMenus } from './ui/menus.js';
+import { createDebugPanel } from './ui/debugPanel.js';
 
 const app = document.getElementById('app');
 const canvas = document.createElement('canvas');
@@ -14,7 +15,10 @@ loadbar.style.width = '60%';
 const game = createGame(canvas);
 const hud = createHud(document.getElementById('hud'));
 const menus = createMenus(document.getElementById('menus'), game);
+const debugPanel = createDebugPanel(document.body, game);
 window.__APEX_MENUS__ = menus;
+window.__APEX_DEBUG__ = debugPanel;
+
 loadbar.style.width = '100%';
 setTimeout(() => loader.classList.add('hidden'), 250);
 
@@ -33,8 +37,10 @@ function frame(now) {
   if (state.mode !== 'paused') game.update(dt);
   game.render();
   hud.update(state);
+  debugPanel.update(dt, state);
 }
 requestAnimationFrame(frame);
 
 // Expose for headless tooling / critics
-window.__APEX__ = { state, game };
+window.__APEX__ = { state, game, hud, menus, debugPanel };
+

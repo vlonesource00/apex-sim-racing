@@ -81,6 +81,24 @@ await key('KeyC', true); await key('KeyC', false); // back to chase
 await sleep(3000);
 await shot('06_back_straight');
 
+// Toggle 3D visual debug suite
+await page.evaluate(() => {
+  if (window.__APEX__?.game?.debugVisualizer) {
+    window.__APEX__.game.debugVisualizer.setEnabled(true);
+  }
+});
+await sleep(500);
+await shot('07_debug_3d_visualizer');
+
+// Open 2D Live Fleet Inspector
+await page.evaluate(() => {
+  if (window.__APEX_DEBUG__) {
+    window.__APEX_DEBUG__.show();
+  }
+});
+await sleep(600);
+await shot('08_debug_fleet_inspector');
+
 const info = await page.evaluate(() => {
   const s = window.__APEX__.state;
   return {

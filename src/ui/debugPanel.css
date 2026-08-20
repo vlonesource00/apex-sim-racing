@@ -1,0 +1,541 @@
+/* src/ui/debugPanel.css */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Roboto+Mono:wght@400;600;700&display=swap');
+
+#apex-debug-panel {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 96%;
+  max-width: 1240px;
+  max-height: 88vh;
+  background: rgba(8, 10, 14, 0.92);
+  border: 1px solid rgba(0, 221, 255, 0.35);
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 24px rgba(0, 221, 255, 0.15);
+  backdrop-filter: blur(12px);
+  color: #e2e8f0;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 12px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#apex-debug-panel.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+#apex-debug-panel.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(-12px);
+}
+
+/* Header */
+.debug-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: linear-gradient(90deg, rgba(0, 221, 255, 0.12) 0%, rgba(15, 23, 42, 0.6) 100%);
+  border-bottom: 1px solid rgba(0, 221, 255, 0.25);
+  user-select: none;
+}
+
+.debug-title-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.debug-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #00ddff;
+  text-shadow: 0 0 10px rgba(0, 221, 255, 0.6);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.debug-title-icon {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: #00ddff;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #00ddff;
+  animation: debug-dot-pulse 1.2s infinite ease-in-out;
+}
+
+@keyframes debug-dot-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.6; }
+}
+
+.debug-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.debug-stat-chip {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.debug-stat-chip strong {
+  color: #fff;
+  font-weight: 700;
+}
+
+.debug-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.debug-shortcut-hint {
+  font-size: 10px;
+  color: #64748b;
+  letter-spacing: 0.5px;
+}
+
+.debug-shortcut-hint kbd {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #cbd5e1;
+}
+
+.debug-close-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #cbd5e1;
+  font-size: 14px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.debug-close-btn:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+/* Layer Filter Toolbar */
+.debug-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: rgba(15, 23, 42, 0.75);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.debug-layer-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.debug-layer-label {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+
+.debug-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  color: #cbd5e1;
+  transition: color 0.15s ease;
+}
+
+.debug-checkbox-label:hover {
+  color: #fff;
+}
+
+.debug-checkbox-label input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.debug-checkbox-label input[type="checkbox"]:checked {
+  background: #00ddff;
+  border-color: #00ddff;
+  box-shadow: 0 0 8px rgba(0, 221, 255, 0.6);
+}
+
+.debug-checkbox-label input[type="checkbox"]:checked::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  font-weight: 900;
+  color: #000;
+}
+
+.layer-tag {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 2px;
+}
+.layer-tag.line { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+.layer-tag.rays { background: #a855f7; box-shadow: 0 0 6px #a855f7; }
+.layer-tag.vectors { background: #eab308; box-shadow: 0 0 6px #eab308; }
+.layer-tag.draft { background: #06b6d4; box-shadow: 0 0 6px #06b6d4; }
+.layer-tag.tags { background: #f97316; box-shadow: 0 0 6px #f97316; }
+
+.debug-quick-toggles {
+  display: flex;
+  gap: 6px;
+}
+
+.debug-btn-mini {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #94a3b8;
+  font-size: 10px;
+  font-family: 'Roboto Mono', monospace;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.debug-btn-mini:hover {
+  background: rgba(0, 221, 255, 0.15);
+  border-color: rgba(0, 221, 255, 0.4);
+  color: #00ddff;
+}
+
+/* Telemetry Table Container */
+.debug-table-container {
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: 10px 14px 14px;
+  background: rgba(8, 10, 14, 0.7);
+}
+
+.debug-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.debug-table th {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #64748b;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 23, 42, 0.4);
+  text-transform: uppercase;
+}
+
+.debug-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: middle;
+}
+
+.debug-row {
+  transition: background 0.1s ease;
+}
+
+.debug-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.debug-row.player-row {
+  background: rgba(225, 6, 0, 0.12);
+  border-left: 3px solid #e10600;
+}
+.debug-row.player-row:hover {
+  background: rgba(225, 6, 0, 0.18);
+}
+
+/* Badges */
+.car-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  user-select: none;
+  min-width: 62px;
+  text-align: center;
+}
+
+.badge-you {
+  background: rgba(225, 6, 0, 0.25);
+  color: #ff4d4d;
+  border: 1px solid #ff4d4d;
+  box-shadow: 0 0 8px rgba(225, 6, 0, 0.4);
+}
+.badge-viper {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.6);
+}
+.badge-surgeon {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.6);
+}
+.badge-wall {
+  background: rgba(234, 179, 8, 0.2);
+  color: #facc15;
+  border: 1px solid rgba(234, 179, 8, 0.6);
+}
+.badge-rocket {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.6);
+}
+.badge-rookie {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.6);
+}
+
+/* Place Position Indicator */
+.pos-pill {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 900;
+  font-size: 12px;
+  color: #f8fafc;
+  min-width: 28px;
+  display: inline-block;
+}
+.pos-pill.p1 { color: #facc15; text-shadow: 0 0 6px #facc15; }
+.pos-pill.p2 { color: #cbd5e1; }
+.pos-pill.p3 { color: #d97706; }
+
+/* Driver Name */
+.driver-name {
+  font-weight: 600;
+  color: #f1f5f9;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* State Badge */
+.state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.state-cruising {
+  background: rgba(100, 116, 139, 0.2);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+}
+
+.state-drafting {
+  background: rgba(6, 182, 212, 0.25);
+  color: #22d3ee;
+  border: 1px solid #06b6d4;
+  box-shadow: 0 0 8px rgba(6, 182, 212, 0.3);
+  animation: pulse-draft 0.8s infinite alternate;
+}
+
+.state-defending {
+  background: rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+  border: 1px solid #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.3);
+}
+
+.state-slingshot {
+  background: rgba(192, 132, 252, 0.3);
+  color: #e9d5ff;
+  border: 1px solid #c084fc;
+  box-shadow: 0 0 10px rgba(192, 132, 252, 0.5);
+  animation: pulse-slingshot 0.5s infinite alternate;
+}
+
+.state-divebomb {
+  background: rgba(239, 68, 68, 0.35);
+  color: #fee2e2;
+  border: 1px solid #ef4444;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.6);
+  animation: flash-divebomb 0.15s infinite alternate;
+}
+
+.state-mistake {
+  background: rgba(249, 115, 22, 0.3);
+  color: #ffedd5;
+  border: 1px solid #f97316;
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.5);
+  animation: strobe-mistake 0.2s infinite alternate;
+}
+
+@keyframes pulse-draft {
+  from { opacity: 0.8; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1.02); }
+}
+
+@keyframes pulse-slingshot {
+  from { box-shadow: 0 0 6px rgba(192, 132, 252, 0.4); }
+  to { box-shadow: 0 0 14px rgba(192, 132, 252, 0.8); }
+}
+
+@keyframes flash-divebomb {
+  from { background: rgba(239, 68, 68, 0.5); color: #fff; }
+  to { background: rgba(185, 28, 28, 0.25); color: #fca5a5; }
+}
+
+@keyframes strobe-mistake {
+  from { border-color: #f97316; }
+  to { border-color: #facc15; }
+}
+
+/* Speed vs Target */
+.speed-cell {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 12px;
+}
+.speed-act { font-weight: 700; color: #fff; }
+.speed-sep { color: #64748b; margin: 0 2px; }
+.speed-tgt { color: #94a3b8; }
+.speed-delta-fast { color: #4ade80; font-size: 10px; margin-left: 4px; }
+.speed-delta-slow { color: #f87171; font-size: 10px; margin-left: 4px; }
+
+/* Actuator Gauges (Throttle / Brake / Steer) */
+.gauge-cell {
+  width: 90px;
+}
+
+.gauge-bar-bg {
+  width: 80px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.gauge-fill-throttle {
+  height: 100%;
+  background: linear-gradient(90deg, #16a34a, #22c55e);
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+  transition: width 0.05s linear;
+}
+
+.gauge-fill-brake {
+  height: 100%;
+  background: linear-gradient(90deg, #dc2626, #ef4444);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+  transition: width 0.05s linear;
+}
+
+.gauge-steer-bg {
+  width: 80px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+.gauge-steer-center {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.4);
+  transform: translateX(-50%);
+  z-index: 2;
+}
+
+.gauge-steer-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #00ddff;
+  box-shadow: 0 0 6px rgba(0, 221, 255, 0.6);
+  transition: left 0.05s linear, width 0.05s linear;
+}
+
+/* Slip Metrics */
+.slip-val {
+  font-family: 'Roboto Mono', monospace;
+  font-weight: 600;
+}
+.slip-good { color: #4ade80; }
+.slip-med { color: #facc15; }
+.slip-high { color: #f87171; text-shadow: 0 0 6px rgba(248, 113, 113, 0.6); font-weight: 700; }
+
+/* Lap & Progress */
+.prog-cell {
+  font-size: 11px;
+  color: #cbd5e1;
+}
+.prog-lap { font-weight: 700; color: #fff; margin-right: 4px; }
+.prog-s { color: #94a3b8; }
