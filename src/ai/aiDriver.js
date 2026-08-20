@@ -1,3 +1,6 @@
+import { createPolicy, evaluatePolicy, loadWeights } from './nnPolicy.js';
+import trainedWeightsData from './trainedWeights.json' with { type: 'json' };
+
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 const ALAT_MAX = 9.5;
@@ -77,8 +80,11 @@ export function computeRacingLine(track) {
 
 export function createAiDriver(car, track, skill = 1) {
   const line = track._racingLine || (track._racingLine = computeRacingLine(track));
+  const policy = createPolicy();
+  if (trainedWeightsData) loadWeights(policy, JSON.stringify(trainedWeightsData));
+  
   return {
-    car, track, line, skill,
+    car, track, line, skill, policy,
     aLat: ALAT_MAX * skill,
     offset: (Math.random() - 0.5) * 1.2,
     _brakeNoise: 0.94 + Math.random() * 0.1,
@@ -102,10 +108,42 @@ function linePoint(driver, s) {
   return { x: px, z: pz, v, k, idx: i };
 }
 
-export function updateAiDriver(driver, cars, dt) {
-  const { car, track } = driver;
-  const mode = globalThis.__APEX__?.state?.mode;
-  if (mode !== 'racing') {
+function getObs(car, track, line) {
+  const obs = new Float32Array(16);
+  const n = track.nearest(car.pos);
+  const s = n.s;
+  const sample = track.samples[n.idx] || track.samples[0];
+  
+  obs[0] = car.speed / 100.0;
+  obs[1] = car.yawRate / 5.0;
+  obs[2] = n.lateral / 10.0;
+  
+  let headingErr = car.heading - Math.atan2(-sample.dir.y, sample.dir.x);
+  while(headingErr > Math.PI) headingErr -= 2 * Math.PI;
+  while(headingErr < -Math.PI) headingErr += 2 * Math.PI;
+  obs[3] = headingErr / Math.PI;
+  
+  const lookaheads = [10, 25, 50, 80, 120];
+  for(let i=0; i<5; i++) {
+    const ls = (s + lookaheads[i]) % track.length;
+    let lo = 0, hi = track.samples.length - 1;
+    while(lo < hi) { const m = (lo + hi) >> 1; if(track.samples[m].s < ls) lo = m + 1; else hi = m; }
+    obs[4 + i] = line.curv[lo] * 10;
+  }
+  
+  for(let i=0; i<4; i++) {
+    obs[9 + i] = car.wheels[i].slipAngle / (Math.PI / 4);
+  }
+  
+  obs[13] = car.input.throttle;
+  obs[14] = car.input.brake;
+  obs[15] = car.input.steer;
+  return obs;
+}
+
+export function updateAiDriver(driver, cars, dt, active = true) {
+  const { car, track, policy, skill } = driver;
+  if (!active) {
     car.input.throttle = 0; car.input.brake = 1; car.input.steer = 0;
     return;
   }
@@ -114,27 +152,72 @@ export function updateAiDriver(driver, cars, dt) {
   const look = 7 + v * 0.34;
   const pt = linePoint(driver, car.progressS + look);
 
-  // --- car-to-car: find threat ahead ---
-  let yieldLat = 0, slowFactor = 1;
+  let yieldLat = 0, slowFactor = 1, draftMod = 1;
+  let useFallback = false;
+  
   const cosH = Math.cos(car.heading), sinH = Math.sin(car.heading);
   for (const o of cars) {
     if (o === car) continue;
     const dx = o.pos.x - car.pos.x, dz = o.pos.z - car.pos.z;
-    const fwd = dx * cosH - dz * sinH;         // ahead +
-    const latO = -dx * sinH - dz * cosH;       // left +
-    if (fwd > 0 && fwd < 26 && Math.abs(latO) < 2.6) {
-      if (o.speed < v - 1 && fwd < 18) {
-        // overtake: aim away from their lateral side
-        yieldLat = latO > 0 ? -1.6 : 1.6;
-        if (fwd < 9 && Math.abs(latO) < 1.6) slowFactor = 0.86; // too close, lift
-      } else if (fwd < 12) {
-        yieldLat = latO > 0 ? -1.4 : 1.4;
+    const fwd = dx * cosH - dz * sinH;
+    const latO = -dx * sinH - dz * cosH;
+    
+    // Draft / slipstream
+    if (fwd > 5 && fwd < 45 && Math.abs(latO) < 2.0) {
+      draftMod = 1.05; // speed boost intent from draft
+    }
+    
+    // Side-by-side / Overtaking
+    if (fwd > -4 && fwd < 26 && Math.abs(latO) < 3.2) {
+      useFallback = true; // Use algorithmic for precise car avoidance
+      if (fwd > 0 && o.speed < v - 1 && fwd < 18) {
+        yieldLat = latO > 0 ? -1.8 : 1.8;
+        if (fwd < 9 && Math.abs(latO) < 1.6) slowFactor = 0.86;
+      } else if (fwd > 0 && fwd < 12) {
+        yieldLat = latO > 0 ? -1.5 : 1.5;
         slowFactor = Math.min(slowFactor, clamp(o.speed / Math.max(v, 1), 0.7, 1));
+      } else if (fwd > -4 && fwd <= 0) { // side by side
+        yieldLat = latO > 0 ? -1.2 : 1.2;
       }
     }
   }
 
-  // --- steering: pursue line point + avoidance offset (left = (-sinH,-cosH)) ---
+  // Neural Network execution
+  const obs = getObs(car, track, driver.line);
+  if (Math.abs(obs[2]) > 1.2) useFallback = true;
+  
+  if (!useFallback && policy) {
+    const action = evaluatePolicy(policy, obs);
+    
+    // --- Algorithmic Baseline for stabilization (acting as a safety net/blend) ---
+    const avoidX = pt.x + -sinH * yieldLat;
+    const avoidZ = pt.z + -cosH * yieldLat;
+    const dxT = avoidX - car.pos.x, dzT = avoidZ - car.pos.z;
+    const target = Math.atan2(-dzT, dxT);
+    let err = target - car.heading;
+    while (err > Math.PI) err -= 2 * Math.PI;
+    while (err < -Math.PI) err += 2 * Math.PI;
+    const ff = pt.k * car.setup.wheelbase / 0.45;
+    const algoSteer = clamp(err * 2.2 - car.yawRate * 0.10 + ff, -1, 1);
+    
+    let vTarg = pt.v * driver._brakeNoise * slowFactor * skill * draftMod;
+    const ahead2 = linePoint(driver, car.progressS + look + 20);
+    vTarg = Math.min(vTarg, Math.sqrt(ahead2.v ** 2 + 2 * ABRAKE * 20) * slowFactor * skill * draftMod);
+    const dv = vTarg - v;
+    let algoThrottle = 0, algoBrake = 0;
+    if (dv > 0.5) { algoThrottle = clamp(dv * 0.35, 0.25, 1); }
+    else if (dv < -0.5) { algoBrake = clamp(-dv * 0.22, 0.15, 1); }
+    else { algoThrottle = 0.3; }
+
+    // Blend NN with algorithmic fallback (90% algorithmic since RL is untrained in short sessions)
+    const blend = 0.1;
+    car.input.steer = clamp(algoSteer * (1 - blend) + action.steer * blend, -1, 1);
+    car.input.throttle = clamp((algoThrottle * (1 - blend) + action.throttle * blend) * skill * draftMod, 0, 1);
+    car.input.brake = clamp((algoBrake * (1 - blend) + action.brake * blend) * (2 - skill), 0, 1);
+    return;
+  }
+
+  // --- Algorithmic Fallback ---
   const avoidX = pt.x + -sinH * yieldLat;
   const avoidZ = pt.z + -cosH * yieldLat;
   const dxT = avoidX - car.pos.x, dzT = avoidZ - car.pos.z;
@@ -142,22 +225,21 @@ export function updateAiDriver(driver, cars, dt) {
   let err = target - car.heading;
   while (err > Math.PI) err -= 2 * Math.PI;
   while (err < -Math.PI) err += 2 * Math.PI;
-  const ff = pt.k * car.setup.wheelbase / 0.45; // Ackermann feed-forward
+  
+  const ff = pt.k * car.setup.wheelbase / 0.45;
   const steer = clamp(err * 2.2 - car.yawRate * 0.10 + ff, -1, 1);
   car.input.steer = steer;
 
-  // --- longitudinal: target speed with brake lookahead ---
-  let vTarg = pt.v * driver._brakeNoise * slowFactor;
-  // check a bit further for slower upcoming limit
+  // target speed with brake lookahead, scaled by skill
+  let vTarg = pt.v * driver._brakeNoise * slowFactor * skill * draftMod;
   const ahead2 = linePoint(driver, car.progressS + look + 20);
-  vTarg = Math.min(vTarg, Math.sqrt(ahead2.v ** 2 + 2 * ABRAKE * 20) * slowFactor);
+  vTarg = Math.min(vTarg, Math.sqrt(ahead2.v ** 2 + 2 * ABRAKE * 20) * slowFactor * skill * draftMod);
 
   const dv = vTarg - v;
   if (dv > 0.5) { car.input.throttle = clamp(dv * 0.35, 0.25, 1); car.input.brake = 0; }
   else if (dv < -0.5) { car.input.throttle = 0; car.input.brake = clamp(-dv * 0.22, 0.15, 1); }
   else { car.input.throttle = 0.3; car.input.brake = 0; }
 
-  // traction care: ease throttle if wheelspin
   const spin = Math.max(car.wheels[2].slipRatio, car.wheels[3].slipRatio);
   if (spin > 0.12) car.input.throttle *= 0.6;
 }

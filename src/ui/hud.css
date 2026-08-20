@@ -1,0 +1,301 @@
+/* src/ui/hud.css */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Roboto+Mono:wght@400;700&display=swap');
+
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: 'Orbitron', sans-serif;
+  color: #fff;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+}
+
+.hud-panel {
+  background: rgba(10, 12, 14, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  padding: 12px;
+}
+
+/* Cluster */
+.hud-cluster {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.rpm-bar-container {
+  display: flex;
+  gap: 4px;
+  height: 24px;
+  align-items: flex-end;
+}
+
+.rpm-led {
+  width: 14px;
+  height: 10px;
+  background: #333;
+  border-radius: 2px;
+  transition: background 0.05s, box-shadow 0.05s;
+}
+.rpm-led.on.green { background: #0f0; box-shadow: 0 0 8px #0f0; }
+.rpm-led.on.yellow { background: #ff0; box-shadow: 0 0 8px #ff0; }
+.rpm-led.on.red { background: #f00; box-shadow: 0 0 8px #f00; }
+.rpm-led.on.blue.flash { animation: flash-blue 0.1s infinite alternate; }
+
+@keyframes flash-blue {
+  from { background: #00f; box-shadow: 0 0 12px #00f; }
+  to { background: #333; box-shadow: none; }
+}
+
+.cluster-main {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 12px 32px;
+  border-radius: 40px;
+  border: 2px solid #333;
+  box-shadow: inset 0 0 20px rgba(0,0,0,0.8), 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.gear {
+  font-size: 56px;
+  font-weight: 900;
+  width: 60px;
+  text-align: center;
+  color: #fff;
+}
+.gear.shift-flash {
+  color: #f00;
+  animation: flash-text 0.1s infinite alternate;
+}
+@keyframes flash-text {
+  from { text-shadow: 0 0 20px #f00; }
+  to { text-shadow: none; }
+}
+
+.speed {
+  font-size: 48px;
+  font-weight: 700;
+  font-family: 'Roboto Mono', monospace;
+  width: 120px;
+  text-align: right;
+  letter-spacing: -2px;
+}
+.speed-unit {
+  font-size: 16px;
+  color: #aaa;
+  margin-left: 4px;
+  font-family: 'Orbitron', sans-serif;
+}
+
+.pedals {
+  display: flex;
+  gap: 8px;
+  height: 60px;
+  align-items: flex-end;
+}
+.pedal-bar {
+  width: 12px;
+  height: 100%;
+  background: #222;
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+.pedal-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 0%;
+  transition: height 0.05s;
+}
+.pedal-throttle .pedal-fill { background: linear-gradient(to top, #060, #0f0); }
+.pedal-brake .pedal-fill { background: linear-gradient(to top, #600, #f00); }
+
+/* Top Left: Timing */
+.hud-timing {
+  position: absolute;
+  top: 30px;
+  left: 30px;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.timing-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 24px;
+  font-weight: 700;
+  border-bottom: 2px solid #444;
+  padding-bottom: 4px;
+}
+
+.timing-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 18px;
+  font-family: 'Roboto Mono', monospace;
+}
+.timing-label {
+  color: #aaa;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 14px;
+}
+
+.delta { font-weight: 700; }
+.delta.positive { color: #f44336; }
+.delta.negative { color: #4caf50; }
+.delta.purple { color: #9c27b0; }
+
+/* Top Right: Minimap */
+.hud-minimap {
+  position: absolute;
+  top: 30px;
+  right: 30px;
+}
+.minimap-canvas {
+  background: rgba(0,0,0,0.4);
+  border-radius: 50%;
+  border: 2px solid #444;
+}
+
+/* Bottom Right: Telemetry */
+.hud-telemetry {
+  position: absolute;
+  bottom: 40px;
+  right: 30px;
+  display: flex;
+  gap: 20px;
+}
+.g-meter {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.3);
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(0,0,0,0.5) 100%);
+}
+.g-meter::before, .g-meter::after {
+  content: '';
+  position: absolute;
+  background: rgba(255,255,255,0.2);
+}
+.g-meter::before { top: 50%; left: 0; right: 0; height: 1px; }
+.g-meter::after { left: 50%; top: 0; bottom: 0; width: 1px; }
+.g-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #f00;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 8px #f00;
+  transition: top 0.05s, left 0.05s;
+}
+
+.tires {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 60px;
+  align-items: center;
+}
+.tire {
+  width: 16px;
+  height: 30px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #222;
+  position: relative;
+  overflow: hidden;
+}
+.tire-fill {
+  position: absolute;
+  inset: 0;
+  background: #0f0;
+  opacity: 0.8;
+}
+.tire-slip {
+  position: absolute;
+  inset: 0;
+  border: 2px solid transparent;
+}
+
+/* Overlays */
+.overlay-center {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+.countdown {
+  font-size: 120px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 0 40px #e10600;
+  animation: pop 1s ease-in-out infinite;
+}
+@keyframes pop {
+  0% { transform: scale(0.8); opacity: 0; }
+  20% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+.finish-banner {
+  font-size: 64px;
+  font-weight: 900;
+  color: #0f0;
+  background: rgba(0,0,0,0.8);
+  padding: 20px 60px;
+  border-top: 4px solid #0f0;
+  border-bottom: 4px solid #0f0;
+  text-shadow: 0 0 20px #0f0;
+}
+
+.cam-mode {
+  position: absolute;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.6);
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.damage-bar {
+  position: absolute;
+  bottom: 30px;
+  left: 30px;
+  width: 200px;
+  height: 12px;
+  background: #222;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #444;
+}
+.damage-fill {
+  height: 100%;
+  width: 0%;
+  background: #f00;
+  transition: width 0.2s;
+}

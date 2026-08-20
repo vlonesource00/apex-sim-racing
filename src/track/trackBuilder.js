@@ -162,11 +162,97 @@ export function buildTrack(def) {
   const curbRGeo = buildRibbon(samples, (sm) => ({ l: -sm.width / 2, r: sm.width / 2 + 1.2, y: 0.02 }), 0.5);
   const grassGeo = buildRibbon(samples, (sm) => ({ l: 70, r: 70, y: -0.06 }), 0.05);
 
+  // ---- Materials with Shaders ----
   const mats = def._materials || {};
-  const road = new THREE.Mesh(roadGeo, mats.road || new THREE.MeshStandardMaterial({ color: 0x2c2f33, roughness: 0.95 }));
-  const curbL = new THREE.Mesh(curbLGeo, mats.curb || new THREE.MeshStandardMaterial({ color: 0xd8d8d8, roughness: 0.9 }));
-  const curbR = new THREE.Mesh(curbRGeo, mats.curb || curbL.material);
-  const grass = new THREE.Mesh(grassGeo, mats.grass || new THREE.MeshStandardMaterial({ color: 0x3f7d3a, roughness: 1 }));
+  
+  // Asphalt shader
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 });
+  roadMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      `#include <common>\nvarying vec2 vUv2;`
+    ).replace(
+      '#include <uv_vertex>',
+      `#include <uv_vertex>\nvUv2 = uv;`
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `#include <common>\nvarying vec2 vUv2;\n
+       // Hash and Noise functions for procedural texture
+       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+       float noise(vec2 p) {
+         vec2 i = floor(p); vec2 f = fract(p);
+         vec2 u = f*f*(3.0-2.0*f);
+         return mix(mix(hash(i + vec2(0.0,0.0)), hash(i + vec2(1.0,0.0)), u.x),
+                    mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), u.x), u.y);
+       }`
+    ).replace(
+      '#include <map_fragment>',
+      `#include <map_fragment>
+       float n = noise(vUv2 * 100.0) * 0.1;
+       float dash = step(0.9, fract(vUv2.y * 10.0)) * step(0.48, vUv2.x) * step(vUv2.x, 0.52);
+       vec3 roadColor = vec3(0.2) + vec3(n);
+       diffuseColor.rgb = mix(roadColor, vec3(0.9), dash);
+      `
+    );
+  };
+
+  // Curb shader (red/white)
+  const curbMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+  curbMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      `#include <common>\nvarying vec2 vUv2;`
+    ).replace(
+      '#include <uv_vertex>',
+      `#include <uv_vertex>\nvUv2 = uv;`
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `#include <common>\nvarying vec2 vUv2;`
+    ).replace(
+      '#include <map_fragment>',
+      `#include <map_fragment>
+       float stripe = step(0.5, fract(vUv2.y * 2.0));
+       diffuseColor.rgb = mix(vec3(0.8, 0.1, 0.1), vec3(0.9), stripe);
+      `
+    );
+  };
+
+  // Grass shader
+  const grassMat = new THREE.MeshStandardMaterial({ color: 0x3f7d3a, roughness: 1.0 });
+  grassMat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      `#include <common>\nvarying vec2 vUv2;`
+    ).replace(
+      '#include <uv_vertex>',
+      `#include <uv_vertex>\nvUv2 = uv;`
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `#include <common>\nvarying vec2 vUv2;\n
+       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+       float noise(vec2 p) {
+         vec2 i = floor(p); vec2 f = fract(p);
+         vec2 u = f*f*(3.0-2.0*f);
+         return mix(mix(hash(i + vec2(0.0,0.0)), hash(i + vec2(1.0,0.0)), u.x),
+                    mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), u.x), u.y);
+       }`
+    ).replace(
+      '#include <map_fragment>',
+      `#include <map_fragment>
+       float n = noise(vUv2 * 20.0);
+       vec3 gColor = mix(vec3(0.2, 0.4, 0.15), vec3(0.25, 0.5, 0.2), n);
+       diffuseColor.rgb = gColor;
+      `
+    );
+  };
+
+  const road = new THREE.Mesh(roadGeo, mats.road || roadMat);
+  const curbL = new THREE.Mesh(curbLGeo, mats.curb || curbMat);
+  const curbR = new THREE.Mesh(curbRGeo, mats.curb || curbMat);
+  const grass = new THREE.Mesh(grassGeo, mats.grass || grassMat);
   road.receiveShadow = curbL.receiveShadow = curbR.receiveShadow = grass.receiveShadow = true;
   group.add(grass, road, curbL, curbR);
 

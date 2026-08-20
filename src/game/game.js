@@ -102,7 +102,7 @@ export function createGame(canvas) {
       }
 
       // AI racecraft (P5)
-      for (const c of cars) if (!c.isPlayer) updateAiDriver(drivers.get(c.id), cars, dt);
+      for (const c of cars) if (!c.isPlayer) updateAiDriver(drivers.get(c.id), cars, dt, driving);
 
       // Race orchestration (P6)
       updateRace(race, dt);
