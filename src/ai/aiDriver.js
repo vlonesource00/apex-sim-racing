@@ -3,8 +3,8 @@ import trainedWeightsData from './trainedWeights.json' with { type: 'json' };
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
-const ALAT_MAX = 9.5;
-const ABRAKE = 12.0;
+const ALAT_MAX = 7.5;
+const ABRAKE = 9.8;
 const A_ACCEL = (v) => clamp(9.5 - v * 0.09, 2.2, 9.5);
 
 export function computeRacingLine(track) {
@@ -12,26 +12,26 @@ export function computeRacingLine(track) {
   const n = S.length;
   const curv = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    const a = S[i].dir, b = S[(i + 3) % n].dir;
+    const a = S[i].dir, b = S[(i + 2) % n].dir;
     let d = Math.atan2(b.y, b.x) - Math.atan2(a.y, a.x);
     while (d > Math.PI) d -= 2 * Math.PI;
     while (d < -Math.PI) d += 2 * Math.PI;
-    const ds = Math.max(S[(i + 3) % n].s - S[i].s, 1);
+    const ds = Math.max(S[(i + 2) % n].s - S[i].s, 1);
     curv[i] = Math.abs(d) / ds;
   }
   // smooth curvature
   const sm = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     let acc = 0;
-    for (let k = -4; k <= 4; k++) acc += curv[(i + k + n) % n];
-    sm[i] = acc / 9;
+    for (let k = -2; k <= 2; k++) acc += curv[(i + k + n) % n];
+    sm[i] = acc / 5;
   }
 
   const vT = new Float32Array(n);
-  for (let i = 0; i < n; i++) vT[i] = Math.min(78, Math.sqrt(ALAT_MAX / Math.max(sm[i], 1e-5)));
+  for (let i = 0; i < n; i++) vT[i] = Math.min(75, Math.sqrt(ALAT_MAX / Math.max(sm[i], 1e-5)));
 
-  // backward braking pass + forward accel pass (2 iterations)
-  for (let iter = 0; iter < 2; iter++) {
+  // backward braking pass + forward accel pass (3 iterations)
+  for (let iter = 0; iter < 3; iter++) {
     for (let i = n - 2; i >= 0; i--) {
       const ds = S[(i + 1) % n].s - S[i].s || 2;
       vT[i] = Math.min(vT[i], Math.sqrt(vT[i + 1] ** 2 + 2 * ABRAKE * Math.abs(ds)));
@@ -81,7 +81,10 @@ export function computeRacingLine(track) {
 export function createAiDriver(car, track, skill = 1) {
   const line = track._racingLine || (track._racingLine = computeRacingLine(track));
   const policy = createPolicy();
-  if (trainedWeightsData) loadWeights(policy, JSON.stringify(trainedWeightsData));
+  if (trainedWeightsData) {
+    loadWeights(policy, JSON.stringify(trainedWeightsData));
+    if (trainedWeightsData.trained) policy.trained = true;
+  }
   
   return {
     car, track, line, skill, policy,
@@ -182,11 +185,11 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     }
   }
 
-  // Neural Network execution
+  // Neural Network execution (if trained policy is supplied)
   const obs = getObs(car, track, driver.line);
   if (Math.abs(obs[2]) > 1.2) useFallback = true;
   
-  if (!useFallback && policy) {
+  if (!useFallback && policy && policy.trained) {
     const action = evaluatePolicy(policy, obs);
     
     // --- Algorithmic Baseline for stabilization (acting as a safety net/blend) ---
@@ -209,8 +212,7 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     else if (dv < -0.5) { algoBrake = clamp(-dv * 0.22, 0.15, 1); }
     else { algoThrottle = 0.3; }
 
-    // Blend NN with algorithmic fallback (90% algorithmic since RL is untrained in short sessions)
-    const blend = 0.1;
+    const blend = 0.2;
     car.input.steer = clamp(algoSteer * (1 - blend) + action.steer * blend, -1, 1);
     car.input.throttle = clamp((algoThrottle * (1 - blend) + action.throttle * blend) * skill * draftMod, 0, 1);
     car.input.brake = clamp((algoBrake * (1 - blend) + action.brake * blend) * (2 - skill), 0, 1);

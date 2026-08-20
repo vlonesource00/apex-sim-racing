@@ -20,7 +20,7 @@ function findChrome() {
 }
 const EDGE = findChrome();
 
-const url = process.env.URL || 'http://localhost:5173';
+const url = process.env.URL || 'http://localhost:5199';
 const outDir = process.env.OUT || path.resolve('shots');
 fs.mkdirSync(outDir, { recursive: true });
 

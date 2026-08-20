@@ -182,13 +182,13 @@ export function createHud(el) {
       damageBar.style.width = Math.min(100, (p.damage || 0) * 100) + '%';
 
       // G-Meter
-      const ax = p._ax || 0; // lat
-      const ay = p._ay || 0; // long
-      // Max G scale around 3g
-      let gx = Math.max(-1, Math.min(1, ax / 30)); 
-      let gy = Math.max(-1, Math.min(1, ay / 30));
-      gDot.style.left = (50 + gx * 50) + '%';
-      gDot.style.top = (50 - gy * 50) + '%'; // assuming -ay is braking
+      const ax = p._ax || 0; // longitudinal accel
+      const ay = p._ay || 0; // lateral accel
+      // Scale: 20 m/s^2 ~ 2.0g
+      let gx = Math.max(-1, Math.min(1, ay / 20)); 
+      let gy = Math.max(-1, Math.min(1, ax / 20));
+      gDot.style.left = (50 + gx * 45) + '%';
+      gDot.style.top = (50 - gy * 45) + '%'; // positive ax moves dot up
 
       // Tires
       if (p.wheels && p.wheels.length === 4) {

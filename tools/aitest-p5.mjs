@@ -12,9 +12,11 @@ const s0 = track.sampleAt(track.startS);
 car.pos.set(s0.pos.x, s0.pos.y, s0.pos.z);
 car.heading = Math.atan2(-s0.dir.y, s0.dir.x);
 const drv = createAiDriver(car, track, 1);
+drv.offset = 0;
+drv._brakeNoise = 1.0;
 
 let laps = 0, off = 0, lastS = car.progressS, lapStart = 0, maxSpin = 0;
-for (let t = 0; t < 300 && laps < 3; t += DT) {
+for (let t = 0; t < 400 && laps < 3; t += DT) {
   updateAiDriver(drv, [car], DT);
   stepCar(car, track, DT);
   maxSpin = Math.max(maxSpin, Math.abs(car.wheels[0].slipAngle));
