@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>APEX — Sim Racing</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0c0e; }
+      body { font-family: "Segoe UI", system-ui, -apple-system, sans-serif; color: #e8eef2; }
+      #app { position: fixed; inset: 0; }
+      canvas { display: block; }
+      #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+      #menus { position: fixed; inset: 0; z-index: 20; }
+      #loader {
+        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        background: #0a0c0e; z-index: 50; transition: opacity .4s; flex-direction: column; gap: 16px;
+      }
+      #loader.hidden { opacity: 0; pointer-events: none; }
+      .logo { font-size: 42px; font-weight: 800; letter-spacing: 8px; }
+      .logo span { color: #e10600; }
+      .bar { width: 260px; height: 3px; background: #1c2126; border-radius: 2px; overflow: hidden; }
+      .bar i { display: block; height: 100%; width: 0%; background: #e10600; transition: width .2s; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud"></div>
+    <div id="menus"></div>
+    <div id="loader">
+      <div class="logo">APEX<span>.</span></div>
+      <div class="bar"><i id="loadbar"></i></div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
