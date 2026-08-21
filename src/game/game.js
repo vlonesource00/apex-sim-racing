@@ -62,13 +62,51 @@ export function createGame(canvas) {
   const fx = createEffects(scene);
   const debugVisualizer = createDebugVisualizer(scene, track, cars);
 
-  // Sun follows player for stable shadows
+  // Initialize spectator state
+  state.spectating = false;
+  state.spectateIndex = 0;
+  state.spectatedCar = player;
+  state.spectatedDriver = null;
+
+  // Sun follows active focus car for stable shadows
   const sun = gfx.sun;
 
   const game = {
-    scene, camera, renderer, track, cars, player, rig, input, meshes, debugVisualizer,
+    scene, camera, renderer, track, cars, player, rig, input, meshes, debugVisualizer, drivers,
     _acc: 0,
     _last: performance.now(),
+
+    spectateCar(indexOrId) {
+      if (typeof indexOrId === 'number') {
+        const idx = Math.max(0, Math.min(indexOrId, cars.length - 1));
+        state.spectateIndex = idx;
+        state.spectatedCar = cars[idx] || player;
+        state.spectating = (state.spectatedCar !== player);
+      } else if (typeof indexOrId === 'string') {
+        const foundIdx = cars.findIndex((c) => c.id === indexOrId);
+        if (foundIdx >= 0) {
+          state.spectateIndex = foundIdx;
+          state.spectatedCar = cars[foundIdx];
+          state.spectating = (state.spectatedCar !== player);
+        }
+      }
+      state.spectatedDriver = drivers.get(state.spectatedCar?.id) || null;
+      window.dispatchEvent(new CustomEvent('apex:spectate-changed', { detail: { car: state.spectatedCar, index: state.spectateIndex } }));
+    },
+
+    spectateNextCar() {
+      const nextIdx = (state.spectateIndex + 1) % cars.length;
+      game.spectateCar(nextIdx);
+    },
+
+    spectatePrevCar() {
+      const prevIdx = (state.spectateIndex - 1 + cars.length) % cars.length;
+      game.spectateCar(prevIdx);
+    },
+
+    returnToPlayer() {
+      game.spectateCar(0);
+    },
 
     reset() {
       placeGrid(cars, track);
@@ -84,6 +122,12 @@ export function createGame(canvas) {
       if (bi.reset) game.reset();
       if (bi.pause) state.mode = state.mode === 'paused' ? 'racing' : 'paused';
       if (bi.toggleDebug) window.dispatchEvent(new CustomEvent('apex:toggle-debug'));
+
+      // Handle Spectator AI cycling
+      if (bi.spectateNext) game.spectateNextCar();
+      if (bi.spectatePrev) game.spectatePrevCar();
+      if (bi.spectatePlayer) game.returnToPlayer();
+      if (bi.spectateCarIndex >= 0) game.spectateCar(bi.spectateCarIndex);
 
       if (state.mode === 'countdown') {
         state.countdown -= dt;
@@ -128,8 +172,13 @@ export function createGame(canvas) {
         steps++;
       }
 
-      // Wall-hit shake
-      if (player.wallHit > 0.15) addShake(rig, player.wallHit * 0.5);
+      // Active camera / audio focus car (Player or Spectated AI)
+      const focusCar = (state.spectating && state.spectatedCar) ? state.spectatedCar : player;
+      state.spectatedCar = focusCar;
+      state.spectatedDriver = drivers.get(focusCar.id) || null;
+
+      // Wall-hit shake for focused car
+      if (focusCar.wallHit > 0.15) addShake(rig, focusCar.wallHit * 0.5);
 
       // Effects (P10)
       fx.update(cars, dt);
@@ -139,15 +188,15 @@ export function createGame(canvas) {
         debugVisualizer.update(dt, state);
       }
 
-      // Camera
-      updateCameraRig(rig, player, dt, state.cameraMode);
+      // Camera follows focused car
+      updateCameraRig(rig, focusCar, dt, state.cameraMode);
 
-      // Sound (P7)
-      sound.update(player, camera, dt);
+      // Sound follows focused car
+      sound.update(focusCar, camera, dt);
 
-      // Sun follows player
-      sun.position.set(player.pos.x + 120, 160, player.pos.z + 80);
-      sun.target.position.copy(player.pos);
+      // Sun follows focused car
+      sun.position.set(focusCar.pos.x + 120, 160, focusCar.pos.z + 80);
+      sun.target.position.copy(focusCar.pos);
       sun.target.updateMatrixWorld();
 
       // Meshes
@@ -161,6 +210,11 @@ export function createGame(canvas) {
     },
 
     dispose() {
+      window.removeEventListener('apex:spectate-car', onSpectateCar);
+      window.removeEventListener('apex:spectate-next', onSpectateNext);
+      window.removeEventListener('apex:spectate-prev', onSpectatePrev);
+      window.removeEventListener('apex:spectate-player', onSpectatePlayer);
+
       input.dispose?.();
       sound.dispose?.();
       env.dispose?.();
@@ -170,6 +224,16 @@ export function createGame(canvas) {
       renderer.dispose?.();
     },
   };
+
+  const onSpectateCar = (e) => game.spectateCar(e.detail?.index ?? e.detail?.id ?? 0);
+  const onSpectateNext = () => game.spectateNextCar();
+  const onSpectatePrev = () => game.spectatePrevCar();
+  const onSpectatePlayer = () => game.returnToPlayer();
+
+  window.addEventListener('apex:spectate-car', onSpectateCar);
+  window.addEventListener('apex:spectate-next', onSpectateNext);
+  window.addEventListener('apex:spectate-prev', onSpectatePrev);
+  window.addEventListener('apex:spectate-player', onSpectatePlayer);
 
   function cycleCamera() {
     const order = ['chase', 'cockpit', 'hood'];

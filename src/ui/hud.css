@@ -573,3 +573,123 @@
   box-shadow: 0 0 20px rgba(0, 255, 255, 0.6);
 }
 
+/* Spectator AI HUD Banner */
+.hud-spectate-banner {
+  position: absolute;
+  top: 75px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: rgba(10, 14, 20, 0.88);
+  border: 1px solid rgba(0, 221, 255, 0.5);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.7), 0 0 20px rgba(0, 221, 255, 0.3);
+  border-radius: 8px;
+  padding: 8px 18px;
+  backdrop-filter: blur(8px);
+  z-index: 20;
+  pointer-events: auto;
+  user-select: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hud-spectate-banner.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(-12px);
+}
+
+.hud-spectate-banner.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.spectate-header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.spectate-live-tag {
+  background: #ef4444;
+  color: #fff;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 1px;
+  animation: pulse-live 1s infinite alternate;
+}
+
+@keyframes pulse-live {
+  from { opacity: 0.8; }
+  to { opacity: 1; }
+}
+
+.spectate-driver-badge {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.spectate-driver-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 1px;
+  text-shadow: 0 0 8px rgba(255,255,255,0.5);
+}
+
+.spectate-state-pill {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(0, 221, 255, 0.2);
+  color: #00ddff;
+  border: 1px solid #00ddff;
+}
+
+.spectate-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.spectate-controls-row kbd {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+.spectate-btn-action {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #e2e8f0;
+  border-radius: 3px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.15s ease;
+}
+
+.spectate-btn-action:hover {
+  background: rgba(0, 221, 255, 0.3);
+  color: #fff;
+  border-color: #00ddff;
+}
+
+

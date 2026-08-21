@@ -96,6 +96,22 @@ export function createHud(el) {
 
     <button class="hud-debug-btn" id="hud-debug-btn" title="Toggle Fleet Inspector [U / \`]">DEBUG</button>
 
+    <!-- Spectator AI HUD Banner -->
+    <div class="hud-spectate-banner hidden" id="hud-spectate-banner">
+      <div class="spectate-header-row">
+        <span class="spectate-live-tag">● LIVE AI SPECTATE</span>
+        <span class="pos-pill" id="spectate-pos">P2</span>
+        <span class="car-badge badge-viper" id="spectate-badge">VIPER</span>
+        <span class="spectate-driver-title" id="spectate-driver-name">Alex "Viper" Vance</span>
+        <span class="spectate-state-pill" id="spectate-state">[CRUISING]</span>
+      </div>
+      <div class="spectate-controls-row">
+        <button class="spectate-btn-action" id="hud-spec-prev">◀ PREV [Shift+Tab / []</button>
+        <button class="spectate-btn-action" id="hud-spec-next">NEXT [Tab / ]] ▶</button>
+        <button class="spectate-btn-action" id="hud-spec-return">✕ RETURN TO PLAYER [0 / ESC]</button>
+      </div>
+    </div>
+
     <div class="overlay-center" id="overlay"></div>
   `;
 
@@ -106,6 +122,19 @@ export function createHud(el) {
       window.dispatchEvent(new CustomEvent('apex:toggle-debug'));
     });
   }
+
+  const spectateBanner = el.querySelector('#hud-spectate-banner');
+  const spectatePos = el.querySelector('#spectate-pos');
+  const spectateBadge = el.querySelector('#spectate-badge');
+  const spectateDriverName = el.querySelector('#spectate-driver-name');
+  const spectateState = el.querySelector('#spectate-state');
+  const hudSpecPrev = el.querySelector('#hud-spec-prev');
+  const hudSpecNext = el.querySelector('#hud-spec-next');
+  const hudSpecReturn = el.querySelector('#hud-spec-return');
+
+  if (hudSpecPrev) hudSpecPrev.addEventListener('click', () => window.dispatchEvent(new CustomEvent('apex:spectate-prev')));
+  if (hudSpecNext) hudSpecNext.addEventListener('click', () => window.dispatchEvent(new CustomEvent('apex:spectate-next')));
+  if (hudSpecReturn) hudSpecReturn.addEventListener('click', () => window.dispatchEvent(new CustomEvent('apex:spectate-player')));
 
   const rpmLeds = el.querySelectorAll('.rpm-led');
   const gearEl = el.querySelector('#gear');
@@ -175,8 +204,42 @@ export function createHud(el) {
 
       camModeEl.innerText = (state.cameraMode || 'CHASE').toUpperCase();
 
-      const p = state.player;
+      // Active car to display telemetry for (Player or Spectated AI)
+      const p = (state.spectating && state.spectatedCar) ? state.spectatedCar : state.player;
       if (!p) return;
+
+      // Handle Spectator AI Banner
+      if (spectateBanner) {
+        if (state.spectating && state.spectatedCar && !state.spectatedCar.isPlayer) {
+          spectateBanner.classList.remove('hidden');
+          spectateBanner.classList.add('visible');
+
+          const place = p.place || 1;
+          spectatePos.innerText = `P${place}`;
+          spectatePos.className = `pos-pill ${place === 1 ? 'p1' : place === 2 ? 'p2' : place === 3 ? 'p3' : ''}`;
+
+          const badge = p.badge || 'AI';
+          spectateBadge.innerText = badge;
+          spectateBadge.className = `car-badge badge-${badge.toLowerCase()}`;
+
+          spectateDriverName.innerText = p.name || 'AI Driver';
+
+          const d = p._aiDriver;
+          let stateText = 'CRUISING';
+          if (d?.mistakeType) stateText = `MISTAKE (${d.mistakeType})`;
+          else if (d?.slingshotActive) stateText = 'SLINGSHOT';
+          else if (d?.divebombActive) stateText = 'DIVEBOMB';
+          else if (d?.draftTimer > 0.25) stateText = 'DRAFTING';
+          else if (Math.abs(d?.defendLat || 0) > 0.25) stateText = 'DEFENDING';
+          else if (p.input?.throttle > 0.85) stateText = 'FULL THROTTLE';
+          else if (p.input?.brake > 0.3) stateText = 'BRAKING';
+
+          spectateState.innerText = `[${stateText}]`;
+        } else {
+          spectateBanner.classList.remove('visible');
+          spectateBanner.classList.add('hidden');
+        }
+      }
 
       // Speed, Gear, Transmission Mode
       speedEl.innerText = Math.abs(Math.round(p.speedKph || 0));

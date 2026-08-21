@@ -99,6 +99,33 @@ await page.evaluate(() => {
 await sleep(600);
 await shot('08_debug_fleet_inspector');
 
+// Switch to Spectating AI 1 (Alex "Viper" Vance)
+await page.evaluate(() => {
+  if (window.__APEX_DEBUG__) {
+    window.__APEX_DEBUG__.hide();
+  }
+  if (window.__APEX__?.game?.spectateCar) {
+    window.__APEX__.game.spectateCar(1);
+  }
+});
+await sleep(800);
+await shot('09_spectate_ai_chase');
+
+// Switch to AI Cockpit view while spectating
+await key('KeyC', true); await key('KeyC', false);
+await sleep(800);
+await shot('10_spectate_ai_cockpit');
+
+// Return to Player
+await page.evaluate(() => {
+  if (window.__APEX__?.game?.returnToPlayer) {
+    window.__APEX__.game.returnToPlayer();
+  }
+});
+await key('KeyC', true); await key('KeyC', false);
+await key('KeyC', true); await key('KeyC', false); // back to chase
+await sleep(400);
+
 const info = await page.evaluate(() => {
   const s = window.__APEX__.state;
   return {
@@ -106,6 +133,7 @@ const info = await page.evaluate(() => {
     speed: Math.round(s.player.speedKph),
     pos: s.player.pos.toArray().map((v) => v.toFixed(1)),
     cars: s.cars.length,
+    spectating: s.spectating,
   };
 });
 console.log('STATE', JSON.stringify(info));

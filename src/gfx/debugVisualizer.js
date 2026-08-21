@@ -419,13 +419,41 @@ export function createDebugVisualizer(scene, track, cars = [], drivers = null) {
   rootGroup.add(draftConesGroup);
   rootGroup.add(tagsGroup);
 
-  // 1. CIRCUIT RACING LINE RIBBON
+  // 1. SPECTATOR FOCUS HALO (glowing ground rings on focused car)
+  const haloGroup = new THREE.Group();
+  haloGroup.name = 'Debug_SpectateHalo';
+  const haloRingGeom = new THREE.RingGeometry(1.8, 2.2, 32);
+  haloRingGeom.rotateX(-Math.PI / 2);
+  const haloRingMat = new THREE.MeshBasicMaterial({
+    color: 0x00ddff,
+    transparent: true,
+    opacity: 0.7,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const haloRingMesh = new THREE.Mesh(haloRingGeom, haloRingMat);
+  haloGroup.add(haloRingMesh);
+
+  const haloInnerGeom = new THREE.RingGeometry(2.4, 2.52, 32);
+  haloInnerGeom.rotateX(-Math.PI / 2);
+  const haloInnerMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffff,
+    transparent: true,
+    opacity: 0.35,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const haloInnerMesh = new THREE.Mesh(haloInnerGeom, haloInnerMat);
+  haloGroup.add(haloInnerMesh);
+  rootGroup.add(haloGroup);
+
+  // 2. CIRCUIT RACING LINE RIBBON
   const racingLineMesh = buildRacingLineMesh(track);
   if (racingLineMesh) {
     racingLineGroup.add(racingLineMesh);
   }
 
-  // 2. PER-CAR VISUALIZERS
+  // 3. PER-CAR VISUALIZERS
   const carVisualizers = new Map();
 
   for (const car of cars) {
@@ -547,17 +575,31 @@ export function createDebugVisualizer(scene, track, cars = [], drivers = null) {
   /**
    * Updates all active debug visualizers.
    * @param {number} dt - Delta time in seconds.
+   * @param {object} state - Shared game simulation state.
    */
-  function update(dt = 0.016) {
+  function update(dt = 0.016, state = null) {
     if (!isEnabled) return;
     totalTime += dt;
 
     // Pulse factor for glowing spheres
     const pulseScale = 1.0 + 0.12 * Math.sin(totalTime * 6);
 
+    // Update Spectator Focus Halo Ring
+    const spectatedCar = state?.spectating ? state.spectatedCar : null;
+    if (spectatedCar && layers.lookahead) {
+      haloGroup.visible = true;
+      haloGroup.position.set(spectatedCar.pos.x, spectatedCar.pos.y + 0.04, spectatedCar.pos.z);
+      haloGroup.rotation.y = totalTime * 1.5;
+      const s = 1.0 + 0.08 * Math.sin(totalTime * 8);
+      haloGroup.scale.set(s, 1, s);
+    } else {
+      haloGroup.visible = false;
+    }
+
     for (const [carId, viz] of carVisualizers.entries()) {
       const car = viz.car;
       const driver = getDriverForCar(car, drivers);
+      const isSpectated = (car === spectatedCar);
 
       const cosH = Math.cos(car.heading);
       const sinH = Math.sin(car.heading);
@@ -580,7 +622,7 @@ export function createDebugVisualizer(scene, track, cars = [], drivers = null) {
 
         viz.rayGeometry.attributes.position.needsUpdate = true;
         viz.targetSphere.position.copy(targetPos);
-        viz.targetSphere.scale.setScalar(pulseScale);
+        viz.targetSphere.scale.setScalar(isSpectated ? pulseScale * 1.5 : pulseScale);
       } else {
         viz.rayLine.visible = false;
         viz.targetSphere.visible = false;
@@ -708,7 +750,8 @@ export function createDebugVisualizer(scene, track, cars = [], drivers = null) {
       // 4. FLOATING DRIVER OVERHEAD BILLBOARD TAGS
       if (layers.tags) {
         viz.tagSprite.visible = true;
-        viz.tagSprite.position.set(car.pos.x, car.pos.y + 2.35, car.pos.z);
+        viz.tagSprite.position.set(car.pos.x, car.pos.y + (isSpectated ? 2.65 : 2.35), car.pos.z);
+        viz.tagSprite.scale.set(isSpectated ? 4.2 : 3.6, isSpectated ? 2.1 : 1.8, 1.0);
 
         viz.tagUpdateTimer -= dt;
         if (viz.tagUpdateTimer <= 0) {
@@ -716,7 +759,7 @@ export function createDebugVisualizer(scene, track, cars = [], drivers = null) {
 
           // Determine driver name & badge
           const name = car.isPlayer ? (car.name || 'YOU') : (driver?.name || car.name || 'AI DRIVER');
-          const badge = car.isPlayer ? 'PLAYER' : (driver?.badge || driver?.archetype?.badge || 'AI');
+          const badge = isSpectated ? `★ ${car.isPlayer ? 'YOU' : (driver?.badge || driver?.archetype?.badge || 'AI')}` : (car.isPlayer ? 'PLAYER' : (driver?.badge || driver?.archetype?.badge || 'AI'));
 
           // Determine tactical state
           let stateName = 'CRUISING';

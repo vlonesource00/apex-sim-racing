@@ -54,31 +54,41 @@ export function createDebugPanel(container, game) {
       </div>
     </div>
 
-    <!-- Layer Filter Controls -->
+    <!-- Layer Filter Controls & Spectator AI Bar -->
     <div class="debug-toolbar">
       <div class="debug-layer-group">
-        <span class="debug-layer-label">3D Visualizer Layers:</span>
+        <span class="debug-layer-label">3D Layers:</span>
         <label class="debug-checkbox-label">
           <input type="checkbox" id="layer-racingLine" checked />
-          <span class="layer-tag line"></span> 3D Racing Line
+          <span class="layer-tag line"></span> Line
         </label>
         <label class="debug-checkbox-label">
           <input type="checkbox" id="layer-lookahead" checked />
-          <span class="layer-tag rays"></span> Lookahead Rays & Targets
+          <span class="layer-tag rays"></span> Rays
         </label>
         <label class="debug-checkbox-label">
           <input type="checkbox" id="layer-tireVectors" checked />
-          <span class="layer-tag vectors"></span> 3D Tire Force Vectors
+          <span class="layer-tag vectors"></span> Forces
         </label>
         <label class="debug-checkbox-label">
           <input type="checkbox" id="layer-draftCones" checked />
-          <span class="layer-tag draft"></span> Slipstream Draft Cones
+          <span class="layer-tag draft"></span> Cones
         </label>
         <label class="debug-checkbox-label">
           <input type="checkbox" id="layer-overheadTags" checked />
-          <span class="layer-tag tags"></span> Overhead 3D Tags
+          <span class="layer-tag tags"></span> Tags
         </label>
       </div>
+
+      <!-- Spectator AI Quick Switcher -->
+      <div class="debug-spectate-nav">
+        <span class="debug-layer-label">Spectate:</span>
+        <button class="spectate-nav-btn" id="btn-spectate-prev" title="Previous Car [Shift+Tab / [">◀ PREV</button>
+        <span class="spectate-target-badge" id="spectate-target-text">FOCUS: PLAYER</span>
+        <button class="spectate-nav-btn" id="btn-spectate-next" title="Next Car [Tab / ]">NEXT ▶</button>
+        <button class="spectate-nav-btn primary" id="btn-spectate-player" title="Return to Player [0 / ESC]">★ YOU</button>
+      </div>
+
       <div class="debug-quick-toggles">
         <button class="debug-btn-mini" id="btn-layers-all">ALL ON</button>
         <button class="debug-btn-mini" id="btn-layers-none">ALL OFF</button>
@@ -101,6 +111,7 @@ export function createDebugPanel(container, game) {
             <th style="width: 130px;">REAR SLIP (RL/RR)</th>
             <th style="width: 95px;">SLIP ANGLE</th>
             <th style="width: 130px;">LAP / PROGRESS</th>
+            <th class="spectate-cell" style="width: 85px;">CAMERA</th>
           </tr>
         </thead>
         <tbody id="debug-table-body">
@@ -117,6 +128,14 @@ export function createDebugPanel(container, game) {
   const gridEl = panel.querySelector('#debug-grid');
   const tbodyEl = panel.querySelector('#debug-table-body');
   const closeBtn = panel.querySelector('#debug-close-btn');
+  const spectateTargetText = panel.querySelector('#spectate-target-text');
+  const btnSpecPrev = panel.querySelector('#btn-spectate-prev');
+  const btnSpecNext = panel.querySelector('#btn-spectate-next');
+  const btnSpecPlayer = panel.querySelector('#btn-spectate-player');
+
+  if (btnSpecPrev) btnSpecPrev.addEventListener('click', () => window.dispatchEvent(new CustomEvent('apex:spectate-prev')));
+  if (btnSpecNext) btnSpecNext.addEventListener('click', () => window.dispatchEvent(new CustomEvent('apex:spectate-next')));
+  if (btnSpecPlayer) btnSpecPlayer.addEventListener('click', () => window.dispatchEvent(new CustomEvent('apex:spectate-player')));
 
   const layerCheckboxes = {
     racingLine: panel.querySelector('#layer-racingLine'),
@@ -222,6 +241,7 @@ export function createDebugPanel(container, game) {
 
     const tr = document.createElement('tr');
     tr.className = `debug-row ${car.isPlayer ? 'player-row' : ''}`;
+    tr.title = `Click to spectate ${car.name}`;
 
     tr.innerHTML = `
       <td><span class="pos-pill">P1</span></td>
@@ -247,9 +267,22 @@ export function createDebugPanel(container, game) {
       <td class="slip-cell"><span class="slip-val slip-good">0.0% / 0.0%</span></td>
       <td class="slip-cell"><span class="slip-val slip-good">0.0°</span></td>
       <td class="prog-cell"><span class="prog-lap">L1</span><span class="prog-s">0m (0%)</span></td>
+      <td class="spectate-cell">
+        <button class="btn-spectate" data-id="${car.id}">VIEW</button>
+      </td>
     `;
 
     tbodyEl.appendChild(tr);
+
+    const spectateBtn = tr.querySelector('.btn-spectate');
+    const onRowClick = () => {
+      window.dispatchEvent(new CustomEvent('apex:spectate-car', { detail: { id: car.id } }));
+    };
+    tr.addEventListener('click', onRowClick);
+    spectateBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onRowClick();
+    });
 
     const refs = {
       row: tr,
@@ -267,6 +300,7 @@ export function createDebugPanel(container, game) {
       slipAngle: tr.querySelectorAll('.slip-val')[1],
       progLap: tr.querySelector('.prog-lap'),
       progS: tr.querySelector('.prog-s'),
+      spectateBtn,
     };
 
     rowElements.set(car.id, refs);
@@ -285,6 +319,17 @@ export function createDebugPanel(container, game) {
 
     const track = state.track || game.track;
     const cars = state.cars || game.cars || [];
+    const spectatedCar = state.spectating ? (state.spectatedCar || state.player) : state.player;
+
+    if (spectateTargetText) {
+      if (state.spectating && state.spectatedCar && !state.spectatedCar.isPlayer) {
+        spectateTargetText.innerText = `SPECTATING: ${state.spectatedCar.name || 'AI'}`;
+        spectateTargetText.style.color = '#00ddff';
+      } else {
+        spectateTargetText.innerText = `FOCUS: YOU (PLAYER)`;
+        spectateTargetText.style.color = '#ff8b88';
+      }
+    }
 
     // Sort by race position for clean live leader ordering
     const sortedCars = [...cars].sort((a, b) => (a.place || 99) - (b.place || 99));
@@ -293,6 +338,17 @@ export function createDebugPanel(container, game) {
     sortedCars.forEach((car) => {
       const refs = ensureRow(car);
       tbodyEl.appendChild(refs.row);
+
+      const isCurrentFocus = (car === spectatedCar);
+      if (isCurrentFocus) {
+        refs.row.classList.add('spectating-row');
+        refs.spectateBtn.innerText = 'LIVE';
+        refs.spectateBtn.classList.add('active');
+      } else {
+        refs.row.classList.remove('spectating-row');
+        refs.spectateBtn.innerText = 'VIEW';
+        refs.spectateBtn.classList.remove('active');
+      }
 
       // Pos
       const place = car.place || 1;

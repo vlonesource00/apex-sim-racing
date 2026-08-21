@@ -10,6 +10,8 @@ export function createInput() {
       shiftUp: false, shiftDown: false,
       toggleTransmission: false, toggleTC: false, toggleABS: false,
       toggleDebug: false,
+      spectateNext: false, spectatePrev: false, spectatePlayer: false,
+      spectateCarIndex: -1,
     },
     _prevPause: false, _prevCam: false, _prevReset: false,
   };
@@ -18,8 +20,11 @@ export function createInput() {
   let shiftUpReq = false, shiftDownReq = false;
   let transToggleReq = false, tcToggleReq = false, absToggleReq = false;
   let debugToggleReq = false;
+  let spectateNextReq = false, spectatePrevReq = false, spectatePlayerReq = false;
+  let spectateDirectIndex = -1;
 
   let prevPadLB = false, prevPadRB = false;
+  let prevPadDLeft = false, prevPadDRight = false;
 
   const SHIFT_UP_KEYS = new Set(['KeyE', 'ShiftLeft', 'ShiftRight', 'ArrowUp']);
   const SHIFT_DOWN_KEYS = new Set(['KeyQ', 'ControlLeft', 'ControlRight', 'ArrowDown']);
@@ -37,8 +42,32 @@ export function createInput() {
       if (e.code === 'KeyF') tcToggleReq = true;
       if (e.code === 'KeyB') absToggleReq = true;
       if (e.code === 'KeyU' || e.code === 'Backquote') debugToggleReq = true;
+
+      // Spectator AI Mode Keybindings
+      if (e.code === 'Tab' || e.code === 'BracketRight') {
+        if (e.shiftKey) spectatePrevReq = true;
+        else spectateNextReq = true;
+        e.preventDefault();
+      } else if (e.code === 'BracketLeft') {
+        spectatePrevReq = true;
+        e.preventDefault();
+      } else if (e.code === 'Digit0') {
+        spectatePlayerReq = true;
+      } else if (e.code === 'Digit1') {
+        spectateDirectIndex = 0; // Player
+      } else if (e.code === 'Digit2') {
+        spectateDirectIndex = 1; // AI 1
+      } else if (e.code === 'Digit3') {
+        spectateDirectIndex = 2; // AI 2
+      } else if (e.code === 'Digit4') {
+        spectateDirectIndex = 3; // AI 3
+      } else if (e.code === 'Digit5') {
+        spectateDirectIndex = 4; // AI 4
+      } else if (e.code === 'Digit6') {
+        spectateDirectIndex = 5; // AI 5
+      }
     }
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab'].includes(e.code)) {
       e.preventDefault();
     }
   };
@@ -68,13 +97,13 @@ export function createInput() {
       if (Math.abs(ax) > 0.06) str = -ax;
       if (pad.buttons[0]?.pressed) camToggle = true; // A = camera
 
-      // Gamepad button 5 (RB) shift up, button 4 (LB) shift down
-      const padLB = pad.buttons[4]?.pressed ?? false;
-      const padRB = pad.buttons[5]?.pressed ?? false;
-      if (padRB && !prevPadRB) shiftUpReq = true;
-      if (padLB && !prevPadLB) shiftDownReq = true;
-      prevPadLB = padLB;
-      prevPadRB = padRB;
+      // Gamepad D-pad left / right (buttons 14/15) for spectating
+      const padDLeft = pad.buttons[14]?.pressed ?? false;
+      const padDRight = pad.buttons[15]?.pressed ?? false;
+      if (padDLeft && !prevPadDLeft) spectatePrevReq = true;
+      if (padDRight && !prevPadDRight) spectateNextReq = true;
+      prevPadDLeft = padDLeft;
+      prevPadDRight = padDRight;
     }
 
     state.throttleRaw = thr;
@@ -100,6 +129,12 @@ export function createInput() {
     state.buttons.toggleABS = absToggleReq;
     state.buttons.toggleDebug = debugToggleReq;
 
+    // Spectator AI Buttons
+    state.buttons.spectateNext = spectateNextReq;
+    state.buttons.spectatePrev = spectatePrevReq;
+    state.buttons.spectatePlayer = spectatePlayerReq;
+    state.buttons.spectateCarIndex = spectateDirectIndex;
+
     // Export gearRequest in state
     if (shiftUpReq) state.gearRequest = 1;
     else if (shiftDownReq) state.gearRequest = -1;
@@ -110,6 +145,10 @@ export function createInput() {
     tcToggleReq = false;
     absToggleReq = false;
     debugToggleReq = false;
+    spectateNextReq = false;
+    spectatePrevReq = false;
+    spectatePlayerReq = false;
+    spectateDirectIndex = -1;
   }
 
   function getDriverInput() {
