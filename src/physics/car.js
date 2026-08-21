@@ -235,17 +235,13 @@ export function stepCar(car, track, dt) {
   // Traction Control (TC)
   let tcCut = 0;
   const rearSlipAvg = (car.wheels[2].slipRatio + car.wheels[3].slipRatio) / 2;
-  if (!car.offTrack && car.speed > 3.0) {
+  if (car.speed > 1.0) {
     if (car.tcLevel === 1) {
       // Low (Race): allows playful wheelspin up to 0.25, gentle torque cut
-      if (rearSlipAvg > 0.25) {
-        tcCut = clamp((rearSlipAvg - 0.25) / 0.25, 0, 0.30);
-      }
+      if (rearSlipAvg > 0.25) tcCut = clamp((rearSlipAvg - 0.25) / 0.35, 0, 0.40);
     } else if (car.tcLevel === 2) {
-      // High (Safe): intervenes above 0.15 slip, cuts up to 50%
-      if (rearSlipAvg > 0.15) {
-        tcCut = clamp((rearSlipAvg - 0.15) / 0.20, 0, 0.50);
-      }
+      // High (Safe): strict slip limit
+      if (rearSlipAvg > 0.12) tcCut = clamp((rearSlipAvg - 0.12) / 0.20, 0, 0.75);
     }
   }
   car.tcActive = tcCut > 0.05;
@@ -421,7 +417,7 @@ export function stepCar(car, track, dt) {
 
   // --- Wall collision -------------------------------------------------------
   car.wallHit = Math.max(0, car.wallHit - dt * 3);
-  if (track && track.walls) collideWalls(car, track);
+  if (track && track.walls) collideWalls(car, track, dt);
 
   return car;
 }
@@ -438,7 +434,7 @@ function autoShift(car) {
   }
 }
 
-function collideWalls(car, track) {
+function collideWalls(car, track, dt = 1 / 240) {
   const radius = 1.05;
   const walls = track.wallsNear ? track.wallsNear(car.pos, 6) : track.walls;
   if (!walls) return;
@@ -468,9 +464,13 @@ function collideWalls(car, track) {
         car.vx = car.vel.x * cosH - car.vel.z * sinH;
         car.vy = -car.vel.x * sinH - car.vel.z * cosH;
         const impact = -vn;
-        car.damage = clamp(car.damage + impact * 0.012, 0, 1);
+        if (impact > 3.0) {
+          car.damage = clamp(car.damage + (impact - 3.0) * 0.04 * dt, 0, 1);
+        }
         car.wallHit = clamp(impact / 8, 0, 1);
         car.yawRate *= 0.85;
+        car.speed = Math.hypot(car.vx, car.vy);
+        car.speedKph = car.speed * 3.6;
       }
     }
   }

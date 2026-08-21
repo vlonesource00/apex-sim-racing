@@ -178,8 +178,8 @@ export function computeRacingLine(track) {
       lat[i] = (lat[(i - 2 + n) % n] + lat[(i - 1 + n) % n] + lat[i] * 2 + lat[(i + 1) % n] + lat[(i + 2) % n]) / 6;
     }
   }
-  const maxLat = (i) => S[i].width / 2 - 1.6;
-  for (let i = 0; i < n; i++) lat[i] = clamp(lat[i] * (S[i].width / 2 - 1.3), -maxLat(i), maxLat(i));
+  const maxLat = (i) => S[i].width / 2 - 2.4;
+  for (let i = 0; i < n; i++) lat[i] = clamp(lat[i] * (S[i].width / 2 - 2.0), -maxLat(i), maxLat(i));
 
   const samples = S.map((s, i) => ({ s: s.s, lateral: lat[i], targetSpeed: vT[i] }));
   return { samples, vT, lat, curv: sm, scurv: sc };
@@ -394,18 +394,18 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     const fwd = dx * cosH - dz * sinH;
     const latO = -dx * sinH - dz * cosH;
     const closingSpeed = v - (o.speed || 0);
-    const inDirectPath = Math.abs(latO) < 1.25;
+    const inDirectPath = Math.abs(latO) < 1.35;
 
-    // 1. Clean Slipstream Drafting & High-Speed Tow on Straights (fwd: 4m to 40m)
-    if (!isUpcomingCorner && fwd > 4.0 && fwd < 40.0 && Math.abs(latO) < 2.8) {
-      draftMod = Math.max(draftMod, arch.draftSpeedBoost || 1.06);
-      driver.draftTimer = Math.min(2.0, (driver.draftTimer || 0) + dt);
+    // 1. Clean Slipstream Drafting & High-Speed Attack Runs (fwd: 3m to 45m)
+    if (fwd > 3.0 && fwd < 45.0 && Math.abs(latO) < 3.2) {
+      draftMod = Math.max(draftMod, arch.draftSpeedBoost || 1.08);
+      driver.draftTimer = Math.min(2.5, (driver.draftTimer || 0) + dt * 2.0);
 
-      // Smooth Passing Lane Offset on Straights:
-      if (fwd < 26.0 && closingSpeed > -0.2) {
-        let passSide = (latO >= 0 ? -1.2 : 1.2);
-        if (passSide < 0 && (currentLateral < -halfTrackWidth + 1.8)) passSide = 1.2;
-        else if (passSide > 0 && (currentLateral > halfTrackWidth - 1.8)) passSide = -1.2;
+      // Aggressive Overtaking Lane Split on Straights:
+      if (!isUpcomingCorner && fwd < 32.0 && closingSpeed > -0.5) {
+        let passSide = (latO >= 0 ? -1.5 : 1.5);
+        if (passSide < 0 && (currentLateral < -halfTrackWidth + 1.6)) passSide = 1.5;
+        else if (passSide > 0 && (currentLateral > halfTrackWidth - 1.6)) passSide = -1.5;
 
         targetOvertakeLat = passSide;
         driver.slingshotActive = true;
@@ -415,33 +415,40 @@ export function updateAiDriver(driver, cars, dt, active = true) {
       if (driver.draftTimer <= 0) driver.slingshotActive = false;
     }
 
-    // 2. Corner Entry Pacing: smooth speed modulation when trailing directly behind
-    if (fwd > 0.5 && fwd < 10.0 && inDirectPath) {
-      if (isUpcomingCorner || (o.input && o.input.brake > 0.1) || closingSpeed > 0.5) {
-        const paceRatio = clamp((fwd - 2.8) / 7.0, 0.70, 1.0);
+    // 2. Defensive Line Covering: Leader blocks inside line when attacked
+    if (fwd > -25.0 && fwd < -1.5 && Math.abs(latO) < 3.5) {
+      if (isUpcomingCorner && (arch.defenseAggression || 0.8) > 0.4) {
+        targetDefendLat = insideDir !== 0 ? insideDir * 1.3 : (latO > 0 ? 1.3 : -1.3);
+      }
+    }
+
+    // 3. Side-by-Side 2-Wide Corridor Clearance
+    if (Math.abs(fwd) < 4.8 && Math.abs(latO) < 2.5) {
+      const overlap = clamp(2.5 - Math.abs(latO), 0, 1.8);
+      if (latO > 0) {
+        targetYieldLat -= Math.max(overlap * 0.65, 0.35);
+      } else {
+        targetYieldLat += Math.max(overlap * 0.65, 0.35);
+      }
+    }
+
+    // 4. Traffic Pacing & Safety in Corners (Only when directly behind in same lane)
+    if (fwd > 0.8 && fwd < 8.5 && inDirectPath) {
+      if (isUpcomingCorner || (o.input && o.input.brake > 0.15) || (closingSpeed > 1.0 && fwd < 5.0)) {
+        const paceRatio = clamp((fwd - 2.0) / 6.5, 0.75, 1.0);
         slowFactor = Math.min(slowFactor, paceRatio);
       }
     }
 
-    // 3. Side-by-Side Spatial Clearance (Wheel-to-Wheel respect)
-    if (Math.abs(fwd) < 4.2 && Math.abs(latO) < 2.2) {
-      const overlap = clamp(2.2 - Math.abs(latO), 0, 1.5);
-      if (latO > 0) {
-        targetYieldLat -= Math.max(overlap * 0.5, 0.25);
-      } else {
-        targetYieldLat += Math.max(overlap * 0.5, 0.25);
-      }
-    }
-
-    // 4. Anti-Crash Emergency Safety Buffer (Point-blank only)
-    if (fwd > 0.5 && fwd < 5.0 && inDirectPath && closingSpeed > 0.5) {
-      const proxBrake = clamp((5.0 - fwd) / 3.5, 0.35, 0.90);
+    // 5. Anti-Crash Emergency TTC Buffer (Point-blank only)
+    if (fwd > 0.4 && fwd < 3.8 && inDirectPath && closingSpeed > 1.2) {
+      const proxBrake = clamp((3.8 - fwd) / 2.5, 0.4, 0.95);
       maxEmergencyBrake = Math.max(maxEmergencyBrake, proxBrake);
       avoidanceActive = true;
     }
 
-    // 5. Pressure & Mistake Detection
-    if (fwd > -3.5 && fwd < 3.5 && Math.abs(latO) < 2.5) {
+    // 6. Pressure & Mistake Detection
+    if (fwd > -4.0 && fwd < 4.0 && Math.abs(latO) < 3.0) {
       isUnderPressure = true;
     }
   }
@@ -468,20 +475,16 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     driver.pressureTimer = Math.max(0, (driver.pressureTimer || 0) - dt * 2.0);
   }
 
-  // Smooth filter dynamic offsets
-  const filterRate = clamp(dt * (avoidanceActive ? 6.0 : 3.5), 0, 1);
+  // Smooth filter dynamic offsets with agile steering response
+  const filterRate = clamp(dt * (avoidanceActive || driver.slingshotActive ? 7.0 : 4.5), 0, 1);
   driver.defendLat += (targetDefendLat - driver.defendLat) * filterRate;
   driver.overtakeLat += (targetOvertakeLat - driver.overtakeLat) * filterRate;
   driver.yieldLat += (targetYieldLat - driver.yieldLat) * filterRate;
 
   let totalExtraLat = driver.defendLat + driver.overtakeLat + driver.yieldLat + driver.mistakeLat;
-  totalExtraLat = clamp(totalExtraLat, -halfTrackWidth + 1.2, halfTrackWidth - 1.2);
-
-  // Neural Network policy execution (if trained policy is supplied)
-  const obs = getObs(car, track, driver.line);
-  if (Math.abs(obs[2]) > 1.2 || Math.abs(totalExtraLat) > 0.5 || avoidanceActive || driver.stabilizationTimer > 0) {
-    useFallback = true;
-  }
+  // Strictly enforce that lateral offsets cannot push the vehicle beyond safe track boundaries
+  const maxSafeExtraLat = Math.max(0.2, halfTrackWidth - 2.2);
+  totalExtraLat = clamp(totalExtraLat, -maxSafeExtraLat, maxSafeExtraLat);
 
   // During emergency avoidance, slightly shorten lookahead distance for agility while preserving stability
   const effectiveLook = avoidanceActive ? Math.max(6.5, look * 0.75) : look;
@@ -509,6 +512,21 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     }
   }
 
+  // --- Off-Track Recovery Controller ---
+  if (car.offTrack) {
+    const smAhead = track.sampleAt(progressS + 18);
+    const dxR = smAhead.pos.x - car.pos.x;
+    const dzR = smAhead.pos.z - car.pos.z;
+    const reenterAngle = Math.atan2(-dzR, dxR);
+    let reenterErr = reenterAngle - car.heading;
+    while (reenterErr > Math.PI) reenterErr -= 2 * Math.PI;
+    while (reenterErr < -Math.PI) reenterErr += 2 * Math.PI;
+
+    car.input.steer = clamp(reenterErr * 2.2 - car.yawRate * 0.14, -1, 1);
+    car.input.throttle = 0.52;
+    car.input.brake = 0;
+  } else {
+    // --- Standard High-Performance Racecraft Execution ---
     const dxT = pt.x - car.pos.x, dzT = pt.z - car.pos.z;
     const target = Math.atan2(-dzT, dxT);
     let err = target - car.heading;
@@ -528,29 +546,27 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     } else if (driver.stabilizationTimer > 0) {
       // Clean throttle ramping after wall impact / touch
       const stabProgress = clamp(1.0 - driver.stabilizationTimer / 1.2, 0, 1);
-      car.input.throttle = clamp(0.40 + 0.60 * stabProgress, 0, 1.0);
+      car.input.throttle = clamp(0.50 + 0.50 * stabProgress, 0, 1.0);
       car.input.brake = 0;
-    } else if (dv > 0.3) {
-      // Accelerating
+    } else if (dv > 0.15) {
+      // ACCELERATING: 100% FULL THROTTLE
       let throttle = 1.0;
-      if (dv < 2.5 && Math.abs(steer) > 0.18) {
-        // High lateral load corner exit: modulate throttle to prevent snapping the rear
-        throttle = clamp(dv * 0.45, 0.5, 1.0);
-        if (arch.throttleAggression && arch.throttleAggression < 1.0) {
-          throttle *= arch.throttleAggression;
-        }
-      } else {
-        // Straights & open exits: FULL 100% THROTTLE
-        throttle = 1.0;
+      if (dv < 2.0 && Math.abs(steer) > 0.22) {
+        // High lateral load corner exit: modulate throttle to prevent wheelspin
+        throttle = clamp(dv * 0.55, 0.65, 1.0);
       }
       if (driver.mistakeType === 'hesitation') {
-        throttle *= 0.7; // Hesitation mistake
+        throttle *= 0.75;
       }
-      car.input.throttle = clamp(throttle * (draftMod > 1 ? 1.05 : 1.0), 0, 1.0);
+      car.input.throttle = throttle;
       car.input.brake = 0;
     } else if (dv < -0.3) {
-      // Decisive Threshold Braking with Trail-Braking
-      let brake = clamp(-dv * 0.45, 0.4, 1.0);
+      // DECISIVE THRESHOLD BRAKING & TRAIL BRAKING
+      let brake = 1.0;
+      if (dv > -1.8) {
+        // Approaching target speed: smooth threshold taper
+        brake = clamp(-dv / 1.8, 0.35, 1.0);
+      }
       // Trail-braking: as steering angle increases towards apex, trail off brake
       if (Math.abs(steer) > 0.08) {
         const trailMod = arch.trailBrakeMod ? 0.35 : 0.48;
@@ -559,16 +575,17 @@ export function updateAiDriver(driver, cars, dt, active = true) {
       car.input.throttle = 0;
       car.input.brake = clamp(brake, 0, 1.0);
     } else {
-      // Rolling / maintaining high corner speed
-      let rollThrottle = clamp(0.38 + (arch.cornerSpeedFactor ? (arch.cornerSpeedFactor - 0.95) * 0.5 : 0.05), 0.3, 0.6);
-      if (driver.mistakeType === 'hesitation') rollThrottle *= 0.7;
+      // ROLLING / MAINTAINING HIGH APEX CORNER SPEED
+      let rollThrottle = clamp(0.50 + (arch.cornerSpeedFactor ? (arch.cornerSpeedFactor - 0.95) * 0.6 : 0.08), 0.45, 0.75);
+      if (driver.mistakeType === 'hesitation') rollThrottle *= 0.75;
       car.input.throttle = rollThrottle;
       car.input.brake = 0;
     }
 
     // Traction control on excessive rear wheelspin
     const spin = Math.max(car.wheels?.[2]?.slipRatio ?? 0, car.wheels?.[3]?.slipRatio ?? 0);
-    if (spin > 0.16) car.input.throttle *= 0.75;
+    if (spin > 0.18) car.input.throttle *= 0.80;
+  }
 
   driver._debugState = {
     targetPos: { x: pt.pos.x, y: pt.pos.y, z: pt.pos.z },
