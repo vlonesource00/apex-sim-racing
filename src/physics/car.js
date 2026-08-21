@@ -483,7 +483,7 @@ export function collideCars(cars, dt) {
   const CIRCLE_OFFSET = 1.2;
   const RAD_SUM = 1.90;
   const RAD_SUM_SQ = 3.61;
-  const RESTITUTION = 0.35;
+  const RESTITUTION = 0.08;
 
   for (let i = 0; i < nCars; i++) {
     const carA = cars[i];
@@ -602,8 +602,11 @@ export function collideCars(cars, dt) {
               const impact = Math.abs(v_rel_n);
               carA.wallHit = Math.max(carA.wallHit, clamp(impact / 6.0, 0, 1));
               carB.wallHit = Math.max(carB.wallHit, clamp(impact / 6.0, 0, 1));
-              carA.damage = clamp(carA.damage + impact * 0.015, 0, 1);
-              carB.damage = clamp(carB.damage + impact * 0.015, 0, 1);
+              if (impact > 2.5) {
+                const dmg = (impact - 2.5) * 0.04 * dt;
+                carA.damage = clamp(carA.damage + dmg, 0, 1);
+                carB.damage = clamp(carB.damage + dmg, 0, 1);
+              }
 
               if (!carA._lastContact) carA._lastContact = { pos: new THREE.Vector3(), impact: 0 };
               carA._lastContact.pos.set(contactX, contactY, contactZ);
