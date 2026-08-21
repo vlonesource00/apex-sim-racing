@@ -369,22 +369,6 @@ export function stepCar(car, track, dt) {
     Mz += px * fy - py * fx;
   }
 
-  // --- Power-oversteer yaw moment -------------------------------------------
-  // When rear slip ratio > 0.08 and throttle > 0.6, add yaw moment for playful rotation
-  const rearSlip = Math.max(car.wheels[2].slipRatio, car.wheels[3].slipRatio);
-  if (rearSlip > 0.08 && throttle > 0.6 && car.speed > 2.0 && !car.offTrack) {
-    const slipExcess = clamp((rearSlip - 0.08) / 0.20, 0, 1);
-    const thrExcess = clamp((throttle - 0.6) / 0.4, 0, 1);
-    const poMagnitude = slipExcess * thrExcess * gripMul;
-    const steerDir = Math.sign(steer);
-    if (steerDir !== 0) {
-      const isCounterSteer = steer * car.yawRate < -0.05;
-      const assistGain = isCounterSteer ? 750 : 320;
-      const yawDamp = clamp(1 - Math.abs(car.yawRate) / 2.0, 0.1, 1.0);
-      Mz += steerDir * poMagnitude * assistGain * yawDamp;
-    }
-  }
-
   // --- Longitudinal drag + rolling resistance on body -----------------------
   const dragForce = 0.5 * rho * v2 * s.frontalArea * s.aeroDragCd;
   const rrForce = rr * s.mass * G;
@@ -596,9 +580,11 @@ export function collideCars(cars, dt) {
                 carB.vel.x -= (J * invMassB) * nx;
                 carB.vel.z -= (J * invMassB) * nz;
 
-                // Apply rotational yaw impulse
-                carA.yawRate += (J * rAxn) * invInertiaA;
-                carB.yawRate -= (J * rBxn) * invInertiaB;
+                // Apply rotational yaw impulse (damped by ground tire scrub to prevent unnatural spins)
+                const yawImpulseA = clamp((J * rAxn) * invInertiaA * 0.25, -0.35, 0.35);
+                const yawImpulseB = clamp((J * rBxn) * invInertiaB * 0.25, -0.35, 0.35);
+                carA.yawRate += yawImpulseA;
+                carB.yawRate -= yawImpulseB;
 
                 // Re-project world velocities back into car body frames
                 carA.vx = carA.vel.x * cosHA - carA.vel.z * sinHA;

@@ -10,7 +10,7 @@ export const CAR_CLASSES = {
     trackWidth: 1.68,
     cgHeight: 0.30,
     weightDist: 0.46,        // fraction of static load on FRONT axle
-    rollSplit: 0.47,         // fraction of lateral transfer taken by front axle
+    rollSplit: 0.52,         // fraction of lateral transfer taken by front axle (planted rear)
     steerLock: 0.48,         // max steer angle rad (~27.5 deg)
 
     wheelRadius: 0.33,
@@ -26,12 +26,12 @@ export const CAR_CLASSES = {
     finalDrive: 3.70,
     driveWheels: 'rear',     // 'rear'|'front'|'all'
     diffPreload: 60,         // N m locking
-    diffLock: 0.65,          // 0 open .. 1 locked
+    diffLock: 0.55,          // 0 open .. 1 locked
 
     // Brakes (sized for ~1.5g peak decel; threshold braking matters)
     brakeTorqueFront: 3600,  // N m total per axle at full pedal
-    brakeTorqueRear: 2800,
-    brakeBias: 0.54,         // fraction to front (trail braking rotation)
+    brakeTorqueRear: 2700,
+    brakeBias: 0.57,         // fraction to front (stable trail braking)
     engineInertia: 0.28,     // kg m^2, reflected through gearbox
 
     // Aero
@@ -43,9 +43,9 @@ export const CAR_CLASSES = {
     // Tires (smooth progressive breakaway)
     tire: {
       mu: 1.40,              // peak friction on track
-      B: 11.0,               // stiffness factor
-      C: 1.65,               // shape
-      E: -0.30,              // curvature (gentle progressive post-peak plateau)
+      B: 11.2,               // stiffness factor
+      C: 1.68,               // shape
+      E: -0.45,              // curvature
       Fz0: 3200,             // nominal load N
       Ka: 0.86,              // load sensitivity exponent
     },

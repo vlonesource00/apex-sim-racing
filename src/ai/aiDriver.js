@@ -3,8 +3,8 @@ import trainedWeightsData from './trainedWeights.json' with { type: 'json' };
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
-const ALAT_MAX = 9.8;
-const ABRAKE = 9.0;
+const ALAT_MAX = 8.2;
+const ABRAKE = 8.0;
 const A_ACCEL = (v) => clamp(9.2 - v * 0.08, 2.0, 9.2);
 
 export const AI_ARCHETYPES = {
@@ -288,7 +288,7 @@ function linePoint(driver, s = 0, lateralOffset = 0) {
   const f = clamp(distFromA / segLen, 0, 1);
 
   const trackWidth = (a.width || 12) + ((b.width || 12) - (a.width || 12)) * f;
-  const maxLat = Math.max(trackWidth / 2 - 1.4, 1.0);
+  const maxLat = Math.max(trackWidth / 2 - 2.2, 1.0);
   const rawLat = line.lat[i] + (line.lat[j] - line.lat[i]) * f + (driver.offset || 0) + lateralOffset;
   const latI = clamp(rawLat, -maxLat, maxLat);
 
@@ -404,14 +404,14 @@ export function updateAiDriver(driver, cars, dt, active = true) {
       // Opportunistic Passing Lane Commitment:
       // When closing on the car ahead, pick open side of track and commit to passing lane!
       if (fwd < 30.0) {
-        let passSide = latO >= 0 ? -2.2 : 2.2;
+        let passSide = latO >= 0 ? -1.5 : 1.5;
         // Prefer inside lane if approaching a corner
         if (isUpcomingCorner && insideDir !== 0) {
-          passSide = insideDir * (arch.yieldLat ? Math.abs(arch.yieldLat) : 2.2);
+          passSide = insideDir * (arch.yieldLat ? Math.abs(arch.yieldLat) * 0.75 : 1.4);
         }
         // Validate track boundary
-        if (passSide < 0 && (currentLateral < -halfTrackWidth + 1.8)) passSide = 2.2;
-        else if (passSide > 0 && (currentLateral > halfTrackWidth - 1.8)) passSide = -2.2;
+        if (passSide < 0 && (currentLateral < -halfTrackWidth + 1.8)) passSide = 1.4;
+        else if (passSide > 0 && (currentLateral > halfTrackWidth - 1.8)) passSide = -1.4;
 
         targetOvertakeLat = passSide;
         driver.slingshotActive = true;
@@ -425,7 +425,7 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     if (isUpcomingCorner && fwd > 2.0 && fwd < 24.0 && closingSpeed > 0.3) {
       if ((arch.diveAggression || 1.0) > 0.6) {
         driver.divebombActive = true;
-        const diveLat = insideDir !== 0 ? insideDir * (arch.yieldLat ? Math.abs(arch.yieldLat) : 2.2) : (latO >= 0 ? -2.2 : 2.2);
+        const diveLat = insideDir !== 0 ? insideDir * (arch.yieldLat ? Math.abs(arch.yieldLat) * 0.75 : 1.4) : (latO >= 0 ? -1.4 : 1.4);
         targetOvertakeLat = diveLat;
       }
     } else {
@@ -435,7 +435,7 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     // 3. Defensive Line Covering (Viktor "The Wall", Marco "The Surgeon")
     if (fwd > -25.0 && fwd < -2.0 && Math.abs(latO) < 3.5) {
       if (isUpcomingCorner && (arch.defenseAggression || 0) > 0.5) {
-        targetDefendLat = insideDir !== 0 ? insideDir * (1.4 * (arch.defenseAggression || 1.0)) : (latO > 0 ? 1.4 : -1.4);
+        targetDefendLat = insideDir !== 0 ? insideDir * (1.1 * (arch.defenseAggression || 1.0)) : (latO > 0 ? 1.1 : -1.1);
       }
     }
 
@@ -527,101 +527,26 @@ export function updateAiDriver(driver, cars, dt, active = true) {
 
   // Target speed calculation with Dynamic Stopping Distance along forward line
   let brakeFactor = driver._brakeNoise || 1.0;
-  if (driver.mistakeType === 'lateBrake') brakeFactor *= 1.04;
-  const cornerSpeed = Math.min(1.06, arch.cornerSpeedFactor || 1.0);
-  const aEff = ABRAKE * (arch.brakeNoise || 1.0) * skill;
+  if (driver.mistakeType === 'lateBrake') brakeFactor *= 1.02;
+  const cornerSpeed = Math.min(1.03, arch.cornerSpeedFactor || 1.0);
+  const aEff = 7.2 * (arch.brakeNoise || 1.0) * skill;
 
-  let vTarg = pt.v * brakeFactor * slowFactor * skill * draftMod * cornerSpeed;
+  // On straights, allow draftMod speed boost; in corners/braking zones, cap strictly to physical tire limits
+  const speedBoost = isUpcomingCorner ? 1.0 : draftMod;
+  let vTarg = pt.v * brakeFactor * slowFactor * skill * cornerSpeed * speedBoost;
 
   // Multi-horizon stopping distance lookahead: dStop = (v^2 - vApex^2) / (2 * aBrake)
-  const lookaheadDistances = [8, 16, 26, 38, 54, 74, 98, 126];
+  const lookaheadDistances = [6, 12, 20, 30, 44, 60, 80, 105, 135];
   for (let k = 0; k < lookaheadDistances.length; k++) {
     const distAhead = lookaheadDistances[k];
     const aheadSample = linePoint(driver, progressS + look + distAhead, totalExtraLat);
     const vApex = aheadSample.v * cornerSpeed * (arch.brakeNoise || 1.0) * skill;
-    const vMaxAllowed = Math.sqrt(Math.max(0, vApex * vApex + 2 * aEff * distAhead)) * slowFactor * draftMod;
+    const vMaxAllowed = Math.sqrt(Math.max(0, vApex * vApex + 2 * aEff * distAhead)) * slowFactor;
     if (vMaxAllowed < vTarg) {
       vTarg = vMaxAllowed;
     }
   }
 
-  // --- Anti-Understeer Limit Steering Controller Helper ---
-  const applyAntiUndersteer = (rawSteer) => {
-    let steerOut = rawSteer;
-    const frontSlipL = car.wheels?.[0]?.slipAngle ?? 0;
-    const frontSlipR = car.wheels?.[1]?.slipAngle ?? 0;
-    const avgFrontSlip = (frontSlipL + frontSlipR) * 0.5;
-    const frontSlipMag = Math.abs(avgFrontSlip);
-    const slipDeg = frontSlipMag * (180 / Math.PI);
-
-    const understeerLimitDeg = 10.5; // Threshold where tire enters washout region
-    const optimalPeakGripRad = 8.5 * (Math.PI / 180); // ~0.148 rad optimal peak friction
-
-    let understeerDetected = false;
-    if (slipDeg > understeerLimitDeg && v > 4.0) {
-      understeerDetected = true;
-      const excessSlip = frontSlipMag - optimalPeakGripRad;
-      const steerSign = Math.sign(steerOut) || (avgFrontSlip < 0 ? 1 : -1);
-      const limitedSteerMag = Math.max(0.08, Math.abs(steerOut) - excessSlip * 0.85);
-      steerOut = steerSign * limitedSteerMag;
-    }
-    driver.understeerCorrecting = understeerDetected;
-
-    // Post-impact / wall-hit stabilization mode override
-    if (driver.stabilizationTimer > 0) {
-      const trackH = Math.atan2(-trackSample.dir.y, trackSample.dir.x);
-      let headErr = trackH - car.heading;
-      while (headErr > Math.PI) headErr -= 2 * Math.PI;
-      while (headErr < -Math.PI) headErr += 2 * Math.PI;
-      steerOut = clamp(headErr * 1.6 - car.yawRate * 0.22, -0.65, 0.65);
-    }
-    return { steer: steerOut, understeerDetected };
-  };
-
-  if (!useFallback && policy && policy.trained) {
-    const action = evaluatePolicy(policy, obs);
-    const dxT = pt.x - car.pos.x, dzT = pt.z - car.pos.z;
-    const target = Math.atan2(-dzT, dxT);
-    let err = target - car.heading;
-    while (err > Math.PI) err -= 2 * Math.PI;
-    while (err < -Math.PI) err += 2 * Math.PI;
-    const ff = pt.k * car.setup.wheelbase / 0.45;
-    const algoSteer = clamp(err * 2.2 - car.yawRate * 0.10 + ff, -1, 1);
-
-    const dv = vTarg - v;
-    let algoThrottle = 0, algoBrake = 0;
-    if (dv > 0.3) {
-      algoThrottle = dv > 2.0 ? 1.0 : clamp(dv * 0.5, 0.4, 1.0);
-    } else if (dv < -0.3) {
-      algoBrake = clamp(-dv * 0.45, 0.35, 1.0);
-    } else {
-      algoThrottle = 0.4;
-    }
-
-    const blend = 0.2;
-    const blendedSteer = clamp(algoSteer * (1 - blend) + action.steer * blend, -1, 1);
-    const { steer: finalSteer, understeerDetected } = applyAntiUndersteer(blendedSteer);
-    car.input.steer = finalSteer;
-
-    if (maxEmergencyBrake > 0.1) {
-      car.input.brake = clamp(maxEmergencyBrake, 0, 1.0);
-      car.input.throttle = 0;
-    } else if (driver.stabilizationTimer > 0) {
-      const stabProgress = clamp(1.0 - driver.stabilizationTimer / 1.2, 0, 1);
-      car.input.throttle = clamp(0.35 + 0.65 * stabProgress, 0, 1.0);
-      car.input.brake = 0;
-    } else {
-      let th = (algoThrottle * (1 - blend) + action.throttle * blend) * skill * draftMod;
-      let brk = (algoBrake * (1 - blend) + action.brake * blend) * (2 - skill);
-      if (understeerDetected) {
-        th *= 0.85;
-        brk = clamp(brk * 0.9, 0.2, 1.0);
-      }
-      car.input.throttle = clamp(th, 0, 1);
-      car.input.brake = clamp(brk, 0, 1);
-    }
-  } else {
-    // --- Algorithmic Racecraft Controller ---
     const dxT = pt.x - car.pos.x, dzT = pt.z - car.pos.z;
     const target = Math.atan2(-dzT, dxT);
     let err = target - car.heading;
@@ -629,19 +554,19 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     while (err < -Math.PI) err += 2 * Math.PI;
 
     const ff = pt.k * car.setup.wheelbase / 0.45;
-    const rawSteer = clamp(err * 2.2 - car.yawRate * 0.10 + ff, -1, 1);
-    const { steer, understeerDetected } = applyAntiUndersteer(rawSteer);
+    // Active counter-steer damping catches slides immediately
+    const steer = clamp(err * 2.2 - car.yawRate * 0.14 + ff, -1, 1);
     car.input.steer = steer;
 
     const dv = vTarg - v;
-    if (maxEmergencyBrake > 0.1) {
+    if (maxEmergencyBrake > 0.15) {
       // Emergency braking from TTC radar or proximity
       car.input.brake = clamp(maxEmergencyBrake, 0, 1.0);
       car.input.throttle = 0;
     } else if (driver.stabilizationTimer > 0) {
-      // Clean throttle ramping after wall impact / spin
+      // Clean throttle ramping after wall impact / touch
       const stabProgress = clamp(1.0 - driver.stabilizationTimer / 1.2, 0, 1);
-      car.input.throttle = clamp(0.35 + 0.65 * stabProgress, 0, 1.0);
+      car.input.throttle = clamp(0.40 + 0.60 * stabProgress, 0, 1.0);
       car.input.brake = 0;
     } else if (dv > 0.3) {
       // Accelerating
@@ -656,9 +581,6 @@ export function updateAiDriver(driver, cars, dt, active = true) {
         // Straights & open exits: FULL 100% THROTTLE
         throttle = 1.0;
       }
-      if (understeerDetected) {
-        throttle *= 0.85; // Ease throttle slightly to restore front tire bite
-      }
       if (driver.mistakeType === 'hesitation') {
         throttle *= 0.7; // Hesitation mistake
       }
@@ -672,15 +594,11 @@ export function updateAiDriver(driver, cars, dt, active = true) {
         const trailMod = arch.trailBrakeMod ? 0.35 : 0.48;
         brake = clamp(brake * (1.0 - Math.abs(steer) * trailMod), 0.15, 1.0);
       }
-      if (understeerDetected) {
-        brake = clamp(brake * 0.9, 0.2, 1.0);
-      }
       car.input.throttle = 0;
       car.input.brake = clamp(brake, 0, 1.0);
     } else {
       // Rolling / maintaining high corner speed
       let rollThrottle = clamp(0.38 + (arch.cornerSpeedFactor ? (arch.cornerSpeedFactor - 0.95) * 0.5 : 0.05), 0.3, 0.6);
-      if (understeerDetected) rollThrottle *= 0.85;
       if (driver.mistakeType === 'hesitation') rollThrottle *= 0.7;
       car.input.throttle = rollThrottle;
       car.input.brake = 0;
@@ -689,7 +607,6 @@ export function updateAiDriver(driver, cars, dt, active = true) {
     // Traction control on excessive rear wheelspin
     const spin = Math.max(car.wheels?.[2]?.slipRatio ?? 0, car.wheels?.[3]?.slipRatio ?? 0);
     if (spin > 0.16) car.input.throttle *= 0.75;
-  }
 
   driver._debugState = {
     targetPos: { x: pt.pos.x, y: pt.pos.y, z: pt.pos.z },
