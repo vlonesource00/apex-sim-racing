@@ -28,6 +28,8 @@
     "test:rl-shadow": "node ./tests/rl-shadow-contract.mjs",
     "test:rl-hybrid-live": "node ./tests/rl-hybrid-live-contract.mjs",
     "test:ai-racecraft": "node ./tests/ai-racecraft-regression.mjs",
+    "test:rl-multiagent": "node ./tests/rl-multiagent-contract.mjs",
+    "test:pass-quality": "node ./tests/pass-quality-contract.mjs",
     "rl:export-track": "node ./tools/export-rl-track.mjs",
     "rl:parity": ".venv\\Scripts\\python.exe ./rl/test_parity.py",
     "rl:benchmark": ".venv\\Scripts\\python.exe ./rl/benchmark.py",
@@ -36,6 +38,8 @@
     "rl:gpu:benchmark": "powershell -ExecutionPolicy Bypass -File ./tools/run-jax-gpu.ps1 benchmark",
     "rl:gpu:train": "powershell -ExecutionPolicy Bypass -File ./tools/run-jax-gpu.ps1 train",
     "rl:gpu:evaluate": "powershell -ExecutionPolicy Bypass -File ./tools/run-jax-gpu.ps1 evaluate",
+    "rl:gpu:multi-train": "powershell -ExecutionPolicy Bypass -File ./tools/run-jax-gpu.ps1 multi-train",
+    "rl:gpu:multi-evaluate": "powershell -ExecutionPolicy Bypass -File ./tools/run-jax-gpu.ps1 multi-evaluate",
     "assets:build": "node ./tools/blender/run-assets.mjs",
     "assets:build:gt": "node ./tools/blender/run-assets.mjs --gt-only",
     "assets:check": "node ./tests/asset-pipeline.mjs"

@@ -179,11 +179,13 @@ export class HUD {
     this.$('ai-line').textContent = state ? `${fixed(state.lineOffset)} M` : '—';
     const front = state?.closeFront;
     const behind = state?.closeBehind;
-    this.$('ai-gaps').textContent = front ? `${front.name ?? front.id} ${fixed(front.deltaM, 1)}M` : behind ? `B ${fixed(behind.deltaM, 1)}M` : 'CLEAR';
+    this.$('ai-gaps').textContent = shadow?.opponentId
+      ? `${String(shadow.opponentId).toUpperCase()} ${fixed(shadow.opponentGapM, 1)}M`
+      : front ? `${front.name ?? front.id} ${fixed(front.deltaM, 1)}M` : behind ? `B ${fixed(behind.deltaM, 1)}M` : 'CLEAR';
     const side = state?.nearestSide;
     this.$('ai-side').textContent = side ? `${side.name ?? side.id} ${fixed(side.directM, 1)}M` : 'CLEAR';
     this.$('ai-threat').textContent = String(state?.trafficThreat ?? 'CLEAR');
-    const ttc = finite(state?.trafficTTC, 99);
+    const ttc = finite(shadow?.opponentTtcS, finite(state?.trafficTTC, 99));
     this.$('ai-ttc').textContent = ttc >= 98 ? '—' : `${ttc.toFixed(2)}S`;
     const controls = state?.controls ?? state?.output;
     this.$('ai-controls').textContent = controls
@@ -270,7 +272,7 @@ export class HUD {
         ? `PIT ${pitState} · LIMIT ${vehicle.pitSpeedLimitMps ? Math.round(vehicle.pitSpeedLimitMps * 3.6) + ' KM/H' : 'OPEN'}`
         : context?.rlShadow?.enabled
           ? context?.rlMode === 'hybrid'
-            ? `RL HYBRID LIVE · ${Math.round((context.rlShadow.safetyIntervention ?? 0) * 100)}% SAFETY · TACTICS LEARNED`
+            ? `RL HYBRID LIVE · ${Math.round((context.rlShadow.safetyIntervention ?? 0) * 100)}% SAFETY · ${context?.passQuality?.cleanPasses ?? 0} CLEAN PASSES`
             : `RL SHADOW · ${Math.round((context.rlShadow.safetyIntervention ?? 0) * 100)}% SAFETY · CONTROLS HEURISTIC`
           : `CAMERA ${cameraMode} · T TELEMETRY · P PIT · R RESET`;
     }

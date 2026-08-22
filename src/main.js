@@ -17,8 +17,9 @@ import { HUD } from './ui/HUD.js';
 import { ENDURANCE_PARK } from './scenarios/EndurancePark.js';
 import { EnduranceScenarioVisuals } from './render/EnduranceScenarioVisuals.js';
 import { PitSystem, PIT_STATES, applyPitIntentToControls } from './simulation/PitSystem.js';
+import { PassQualityTracker } from './simulation/PassQuality.js';
 import { RLShadowController } from './ai/RLShadowController.js';
-import stage1Policy from '../rl/policies/stage1_policy_compact.json';
+import stage2Policy from '../rl/policies/stage2_multiagent_policy.json';
 
 const FIXED_TIMESTEP = 1 / 120;
 const MAX_STEPS_PER_FRAME = 14;
@@ -56,9 +57,10 @@ const player = new Vehicle({ id: 'player', name: driverNames[0], color: paint[0]
 const vehicles = [player];
 for (let i = 1; i <= 8; i += 1) vehicles.push(new Vehicle({ id: `ai-${i}`, name: driverNames[i], color: paint[i], spec: gridVariants[i] }));
 const controllers = new Map(vehicles.slice(1).map((vehicle, index) => [vehicle.id, new AIController(index + 1)]));
-const rlShadowControllers = new Map(vehicles.slice(1).map((vehicle) => [vehicle.id, new RLShadowController(stage1Policy)]));
+const rlShadowControllers = new Map(vehicles.slice(1).map((vehicle) => [vehicle.id, new RLShadowController(stage2Policy)]));
 const race = new RaceState(track, vehicles, 3);
 const pitSystem = new PitSystem(track, vehicles, ENDURANCE_PARK);
+const passQuality = new PassQualityTracker(track);
 
 function placeGrid() {
   vehicles.forEach((vehicle, index) => {
@@ -137,6 +139,7 @@ function startRace() {
   placeGrid();
   race.reset();
   pitSystem.reset(vehicles);
+  passQuality.reset();
   input.keyboardDynamics.reset();
   raceStarted = true;
   hud.setRaceActive(true);
@@ -158,6 +161,7 @@ function restartRace() {
   placeGrid();
   race.reset();
   pitSystem.reset(vehicles);
+  passQuality.reset();
   input.keyboardDynamics.reset();
 }
 
@@ -179,7 +183,7 @@ function fixedStep() {
   }
   pitSystem.update(FIXED_TIMESTEP, vehicles);
   for (const vehicle of vehicles.slice(1)) {
-    const decision = rlShadowEnabled ? rlShadowControllers.get(vehicle.id).update(vehicle, track, FIXED_TIMESTEP) : null;
+    const decision = rlShadowEnabled ? rlShadowControllers.get(vehicle.id).update(vehicle, track, FIXED_TIMESTEP, vehicles) : null;
     if (rlHybridEnabled && decision && decision.decisions !== vehicle.aiAppliedDecision) {
       controllers.get(vehicle.id).setTacticalPolicy(decision);
       vehicle.aiAppliedDecision = decision.decisions;
@@ -191,6 +195,7 @@ function fixedStep() {
   updateAerodynamicWakes(vehicles);
   for (const vehicle of vehicles) vehicle.step(FIXED_TIMESTEP, track, canDrive);
   const collisionStats = resolveVehicleCollisions(vehicles, 3);
+  passQuality.update(vehicles, collisionStats, FIXED_TIMESTEP, race.phase === 'racing');
   race.lastImpact = Math.max(race.lastImpact, collisionStats.maxImpact / 18);
   physicsCounter += 1;
 }
@@ -263,6 +268,7 @@ function frame(now) {
     aiDebug: aiDebug.snapshot(),
     pit: pitSystem.status(player),
     rlShadow: rlShadowEnabled ? selectedAI?.rlShadow : null,
+    passQuality: passQuality.snapshot(),
     rlMode,
     spectatedName: cameraRig.mode === 'SPECTATE' ? selectedAI?.name : null
   });
@@ -280,7 +286,7 @@ window.addEventListener('resize', () => {
 });
 requestAnimationFrame(frame);
 window.__APEX73__ = {
-  track, vehicles, visuals, environment, assets, metrics, race, controllers, aiDebug, cameraRig, rlShadowControllers,
+  track, vehicles, visuals, environment, assets, metrics, race, controllers, aiDebug, cameraRig, rlShadowControllers, passQuality,
   interactions: { updateAerodynamicWakes, resolveVehicleCollisions }, pitSystem, scenario: ENDURANCE_PARK,
   get enduranceVisuals() { return enduranceVisuals; },
   startRace, selectClass, rlShadowEnabled, rlHybridEnabled, rlMode, get raceStarted() { return raceStarted; }

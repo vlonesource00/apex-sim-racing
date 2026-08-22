@@ -152,7 +152,8 @@ export function resolveVehicleCollisions(vehicles = [], iterations = 3) {
     pairs: 0,
     maxImpact: 0,
     maxPenetration: 0,
-    deepOverlaps: 0
+    deepOverlaps: 0,
+    contactPairs: []
   };
   for (let iteration = 0; iteration < passes; iteration += 1) {
     for (let a = 0; a < list.length; a += 1) {
@@ -168,6 +169,7 @@ export function resolveVehicleCollisions(vehicles = [], iterations = 3) {
         stats.maxPenetration = Math.max(stats.maxPenetration, finite(contact.penetration));
         const impact = finite(first.collide?.(second), 0);
         stats.maxImpact = Math.max(stats.maxImpact, impact);
+        if (iteration === 0) stats.contactPairs.push({ a: first.id, b: second.id, impact });
       }
     }
   }
