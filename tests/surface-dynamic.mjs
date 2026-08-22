@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { Circuit } from '../src/simulation/Track.js';
+import { RubberSurfaceRenderer } from '../src/render/RubberSurfaceRenderer.js';
+
+const track = new Circuit();
+assert.ok(track.rubberLaneCount >= 7, 'rubber map needs at least seven lateral lanes');
+assert.ok(track.rubberMap instanceof Float32Array, 'rubber map must be a flat typed array');
+const index = 24;
+const lateral = 0;
+const before = track.rubberAt(index, lateral);
+const beforeGrip = track.surfaceAt(track.samples[index].x, track.samples[index].z).grip;
+for (let step = 0; step < 120; step += 1) track.updateTirePass({ index, lateral }, 1, 1 / 120, 4200, 30000);
+const contacted = track.rubberAt(index, lateral);
+const separated = track.rubberAt(index, track.roadHalfWidth - 0.45);
+const afterSurface = track.surfaceAt(track.samples[index].x, track.samples[index].z);
+assert.ok(contacted - before > 0.005, 'controlled passes should raise the contacted lane');
+assert.ok(contacted > separated, 'separated lane should retain less rubber');
+assert.ok(afterSurface.grip > beforeGrip, 'rubber should measurably increase road grip');
+assert.ok(afterSurface.grip - beforeGrip <= 0.07 + 1e-6, 'rubber grip gain must stay bounded');
+assert.ok(track.rubberRevision >= 120 && track.revision === track.rubberRevision, 'rubber revision should advance truthfully');
+assert.ok(track.rubber[index] > 0, 'longitudinal aggregate must remain nonzero');
+
+const scene = new THREE.Scene();
+const renderer = new RubberSurfaceRenderer(scene, track);
+const geometry = renderer.geometry;
+const material = renderer.material;
+const attribute = geometry.getAttribute('rubber');
+const updateCount = renderer.updateCount;
+track.updateTirePass({ index, lateral }, 1, 1 / 120, 4200, 30000);
+renderer.update(0.05);
+assert.equal(renderer.updateCount, updateCount, 'renderer should not refresh more than ten times per second');
+renderer.update(0.05);
+assert.ok(renderer.updateCount > updateCount, 'renderer should refresh after the revision interval');
+assert.equal(renderer.geometry, geometry, 'renderer must reuse its geometry');
+assert.equal(renderer.material, material, 'renderer must reuse its material');
+assert.equal(renderer.geometry.getAttribute('rubber'), attribute, 'renderer must reuse its attribute');
+assert.equal(renderer.material.depthTest, true);
+assert.equal(renderer.material.depthWrite, false);
+renderer.dispose();
+assert.equal(renderer.mesh, null);
+
+console.log('Dynamic surface contract passed: lane-local deposition, bounded grip, revision tracking, and reusable renderer buffers.');

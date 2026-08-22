@@ -1,0 +1,36 @@
+{
+  "name": "apex-73-racing",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test:steering": "node ./tests/steering-regression.mjs",
+    "test:high-speed-steering": "node ./tests/high-speed-steering-regression.mjs",
+    "test:ai-debug": "node ./tests/ai-debug-contract.mjs",
+    "test:wake": "node ./tests/vehicle-interactions.mjs",
+    "test:surface": "node ./tests/surface-dynamic.mjs",
+    "test:scenario": "node ./tests/endurance-scenario-contract.mjs",
+    "test:audio": "node ./tests/audio-contract.mjs",
+    "test:pit": "node ./tests/pit-system-regression.mjs",
+    "test:classes": "node ./tests/class-performance-regression.mjs",
+    "test:ui": "node ./tests/ui-contract.mjs",
+    "test:ai-race-flow": "node ./tests/ai-race-flow.mjs",
+    "test:endurance-race": "node ./tests/endurance-race-flow.mjs",
+    "test:cockpit": "node ./tests/cockpit-contract.mjs",
+    "test:physics": "node ./tests/physics-suite.mjs",
+    "test:handling": "node ./tests/handling-ers-regression.mjs",
+    "test:prototype-aero": "node ./tests/prototype-aero-balance-regression.mjs",
+    "assets:build": "node ./tools/blender/run-assets.mjs",
+    "assets:build:gt": "node ./tools/blender/run-assets.mjs --gt-only",
+    "assets:check": "node ./tests/asset-pipeline.mjs"
+  },
+  "dependencies": {
+    "three": "^0.166.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.8"
+  }
+}

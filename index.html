@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#08100d" />
+    <title>APEX//73 — Racing Simulator</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <section id="start-menu" aria-label="Race class selection">
+      <div class="menu-scan"></div>
+      <div class="menu-content">
+        <p class="menu-kicker">APEX//73 // CIRCUIT 01</p>
+        <h1>CHOOSE<br><i>YOUR</i> WEAPON</h1>
+        <p class="menu-copy">CALIBRATED RACE SYSTEMS. NO GARAGE NOISE. SELECT A CLASS, THEN ARM THE GRID.</p>
+        <div class="class-select" role="list">
+          <button class="class-card" data-class="gt" type="button"><span>01</span><b>GT</b><small>BALANCED<br>ENDURANCE</small></button>
+          <button class="class-card" data-class="prototype" type="button"><span>02</span><b>PROTOTYPE</b><small>GROUND-EFFECT<br>ATTACK</small></button>
+          <button class="class-card" data-class="touring" type="button"><span>03</span><b>TOURING</b><small>FRONT-DRIVE<br>COMBAT</small></button>
+        </div>
+        <p class="class-summary" data-role="class-summary">GT // BALANCED ENDURANCE // 1,265 KG · RWD · 520 NM · 2.0 CL</p>
+        <button class="start-race" data-action="start-race" type="button">START RACE <span>↵</span></button>
+        <p class="menu-foot">ENTER STARTS · CLICK OR TAB TO SELECT · 120 HZ FIXED SIMULATION</p>
+      </div>
+    </section>
+    <div id="loading-screen" aria-live="polite">
+      <div class="loading-mark">APEX<span>//</span>73</div>
+      <div class="loading-rule"></div>
+      <p>LOADING CIRCUIT SYSTEMS</p>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

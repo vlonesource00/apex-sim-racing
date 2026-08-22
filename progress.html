@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>APEX//73 — Progress</title>
+    <style>
+      body{margin:0;background:#090e0c;color:#edf4e9;font:16px/1.45 system-ui,sans-serif;padding:clamp(20px,5vw,70px)}
+      main{max-width:1000px;margin:auto}h1{font-size:clamp(40px,7vw,80px);letter-spacing:-.08em;margin:0}h1 i,strong{font-style:normal;color:#e9ff45}
+      h2{margin:35px 0 8px;font-size:13px;letter-spacing:.15em;color:#9cb19e}section{background:#121a16;border-left:3px solid #e9ff45;padding:15px 20px;margin:12px 0}
+      ul{margin:6px 0;padding-left:20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}.metric{padding:14px;background:#16201b}.metric b{display:block;color:#e9ff45;font-size:25px}
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>APEX<i>//</i>73</h1>
+      <div id="report"></div>
+    </main>
+    <script id="progress-data" type="application/json">
+      {
+        "system":"APEX//73 — Endurance Park mixed-class racing simulator",
+        "task":"Repair the player car's brick-like mid/high-speed steering before beginning the hybrid RL/heuristic AI experiment.",
+        "status":"The keyboard driver now derives its curvature envelope from each class's live aerodynamic load, mass and tyre capability, including floor stall and dirty-air losses. At 198 km/h the prototype receives 3.26 g / 1.59 degrees of road-wheel authority instead of the previous roughly 1 g / 0.5 degree cap. Its physical high-speed yaw probe improved from 0.080 to 0.208 rad/s while remaining below 1 degree body slip. All focused and full regression/build gates pass, and the repaired browser starts with no new warnings or errors.",
+        "criticVerdict":"The largest user-visible failure found during live inspection was a terrain-lighting scope error that left the app on its loading screen; it is fixed and the repaired browser race runs with no new console warnings or errors. A second race-level audit exposed permanent full-lock AI recovery and one-frame tyre-wear spikes; both foundations were replaced with bounded marshal recovery and capped wear-energy integration.",
+        "biggestGap":"The remaining distance to iRacing/Assetto Corsa is mainly content fidelity: licensed laser-scanned track data, photogrammetry-grade cars/props, recorded per-car engine banks, weather/replay systems, crowds and force-feedback hardware. The current Blender vehicles and venue props are intentionally lightweight enough for a browser and remain visibly below AAA art density.",
+        "completed":[
+          "GT / prototype / touring frozen SI-unit presets: mass, inertia, drivetrain, brakes, suspension, aero, differential and tyre targets",
+          "Stateful Pacejka-inspired combined-slip tyres with relaxation, load sensitivity, camber thrust, thermal zones, pressure and wear",
+          "Four-corner suspension travel, ARB load transfer, ride-height-sensitive aero, Salisbury-style LSD, engine inertia and auto-blip",
+          "TC and ABS levels 0–7 plus brake-bias cycling, activity telemetry and per-wheel live data",
+          "Per-class handling calibration with smooth hysteretic torque-only TC and bounded yaw stability",
+          "Prototype aero-platform recalibration: smooth floor efficiency, 47.9% front aero balance, neutral high-speed rotation and progressive low-pressure trail braking",
+          "Prepared race tyres with rolling/deformation hysteresis heat, tread-carcass conduction, airflow cooling, pressure and wear",
+          "Prototype-only rear-axle ERS: 120 kW deployment, up to 200 kW mechanical regen, 8 MJ finite SOC and OFF/AUTO/ATTACK modes",
+          "Render-only terrainHeightAt corridor carving below road, curb, runoff and barrier surfaces with smooth outside blend",
+          "New 3,061.7 m Endurance Park: 730.1 m main straight, 34 m elevation range, fast aero sectors, technical complexes, bank/grade, kerbs, runoff and physical pit lane",
+          "Dense hybrid venue: procedural circuit bed plus 613 planned props across 17 instanced batches and Blender control tower, hospitality, footbridge, crane, service vehicles, gantries and circuit furniture",
+          "Keyboard Dynamics with progressive pedals, curvature/lateral-acceleration-limited road-wheel authority, countersteer and deterministic reset",
+          "Aero-aware player steering envelope: live downforce, class mass, tyre mu, floor state and dirty air now increase or reduce physically available high-speed curvature without direct yaw injection",
+          "Signed front-axle Ackermann steering with inner-wheel gain and straight rear wheels",
+          "Sprung-only body roll/pitch with corrected outside-load and accel/brake signs, finite race-car attitude caps, and road bank/grade state",
+          "Explicit low chassis attitude pivot; unsprung visual root follows simulated elevation, bank, grade and heave while wheels remain outside the sprung pivot",
+          "APEX class-selection start menu blocks the race until launch; selected player class is passed to physics and visual variant",
+          "MoTeC-style G-G plot, I/M/O tyre temperature cards, pressure, slip and suspension telemetry",
+          "Predictive racing AI with TTC/proximity awareness, overtaking, defending, collision avoidance, pit intent, class pace, mistakes and bounded marshal recovery",
+          "Truthful AI debug: 24-point 3.2-second projected paths, actual mode/reason/control telemetry, selected-car F3 view, F4 field overlay and N selection",
+          "RaceState standings read model and cohesive session/order/electronics/inputs/ERS/planner HUD with responsive CSS",
+          "Aerodynamic slipstream and dirty-air model plus longitudinal/lateral rubber accumulation with a visible racing-line shader",
+          "Pit request, entry, limiter, box hold, timed tyre service, release and fresh-tyre state with HUD status and AI strategy hooks",
+          "Expanded physical WebAudio: engine/driveline, ERS deploy, regen, gear shifts, kerb strikes, impacts, overrun, pit limiter, horns and track warnings",
+          "Live browser smoke: prototype race, F3 planner, P pit request and repaired Endurance Park scene verified with no new console warnings/errors",
+          "Blender assets, cockpit anchor contract, steering projection contract and asset pipeline preserved",
+          "Physics and steering suites verify finite 120 Hz stress, curvature cap, force-generated yaw, Ackermann signs, tire behavior, restrained roll, thermal pressure, 3D track, electronics bounds and class differentiation"
+        ],
+        "weak":[
+          "Extended human-driven full-stint feel, device-specific audio mix and narrow mobile layout remain only partially verified",
+          "No weather, replay, animated crowds, driver animation, aggressive LOD switching or WebHID/WebUSB force feedback",
+          "Tire, powertrain and ERS values are calibrated browser approximations, not proprietary simulator or homologation data"
+        ],
+        "metrics":[
+          ["Physics timestep","1 / 120 s"],
+          ["GT keyboard cap @ 22 m/s","0.0581 rad / 3.33° road wheel"],
+          ["Prototype steering @ 198 km/h","3.26 g target · 1.59° road wheel · 0.208 rad/s measured yaw"],
+          ["Settled coast/lift/power handling","GT 1.4° · prototype 0.4° · touring 3.8° max body slip probe"],
+          ["TC traction / straight probes","61.7% deliberate traction duty · 0% settled straight duty · TC0 bypassed"],
+          ["Prototype aero / trail-brake probe","47.9% front balance · 1.00 normal floor efficiency · 1.14x light-brake/coast yaw"],
+          ["Track length / elevation","3,061.7 m / 34.0 m range"],
+          ["Main straight","730.1 m"],
+          ["Bank range","11.71°"],
+          ["Prepared tire start","GT 62 / prototype 70 / touring 58 °C tread target"],
+          ["90 s normal thermal probe","GT 81 / prototype 85 / touring 76 °C surface; abuse hotter"],
+          ["ERS dimensional/energy probe","120 kW deploy · 200 kW mechanical regen · 8 MJ store · SOC bounded"],
+          ["Terrain corridor probe","4,455 dense samples · 0 intersections · 0.241 m worst clearance"],
+          ["Asset payload","4300.2 KiB / <=15 MiB target"],
+          ["Vehicle variants","3 / 3"],
+          ["Venue density","613 planned props · 17 instanced batches · <=35 meshes"],
+          ["Validated prop roots","15"],
+          ["Endurance AI race","8 / 8 finishers · 0 deep overlaps · 0 stalls"],
+          ["Class benchmark","Prototype 79.6 s · GT 90.7 s · touring 100.8 s"],
+          ["One-lap tyre degradation","8.2% prototype · 9.1% GT · 9.4% touring"],
+          ["AI debug determinism","Debug on/off state equal · 24-point / 3.2 s finite paths"],
+          ["HUD/debug contract","Focused AI-debug and UI contracts passed"],
+          ["Live browser smoke","Race + F3 planner + pit request · no new warnings/errors"],
+          ["Focused physics suite","passed"],
+          ["Steering / cockpit / assets","passed / passed / passed"],
+          ["Production build","passed"]
+        ]
+      }
+    </script>
+    <script>
+      const d=JSON.parse(document.querySelector('#progress-data').textContent);
+      const list=(items)=>'<ul>'+items.map((item)=>'<li>'+item+'</li>').join('')+'</ul>';
+      const cards=d.metrics.map((item)=>'<div class="metric">'+item[0]+'<b>'+item[1]+'</b></div>').join('');
+      document.querySelector('#report').innerHTML=
+        '<section><strong>Current system/task</strong><br>'+d.system+'<br>'+d.task+'</section>'+
+        '<section><strong>Current truthful status</strong><br>'+d.status+'</section>'+
+        '<section><strong>Latest critic verdict</strong><br>'+d.criticVerdict+'</section>'+
+        '<section><strong>Biggest gap</strong><br>'+d.biggestGap+'</section>'+
+        '<h2>COMPLETED</h2><section>'+list(d.completed)+'</section>'+
+        '<h2>WEAK AREAS</h2><section>'+list(d.weak)+'</section>'+
+        '<h2>PHYSICS / PERFORMANCE METRICS</h2><div class="grid">'+cards+'</div>';
+    </script>
+  </body>
+</html>
