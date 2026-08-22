@@ -171,7 +171,7 @@ export class HUD {
     const shadow = snapshot?.rlShadow;
     const tactical = state?.tacticalPolicy;
     this.$('ai-reason').textContent = shadow?.enabled
-      ? `${state?.reason ?? 'AI ACTIVE'} · ${tactical?.source === 'RL_HYBRID' ? 'RL LIVE' : 'RL SHADOW'} ${Math.round(finite(shadow.safetyIntervention) * 100)}% SAFE`
+      ? `${state?.reason ?? 'AI ACTIVE'} · RL${shadow?.policyStage ?? ''} ${tactical?.source === 'RL_HYBRID' ? 'LIVE' : 'SHADOW'} ${Math.round(finite(shadow.safetyIntervention) * 100)}% SAFE${shadow?.boxedIn ? ' · BOXED' : ''}`
       : state?.reason ?? 'WAITING FOR AI TELEMETRY';
     this.$('ai-speed').textContent = state ? `${(finite(state.currentSpeed) * 3.6).toFixed(1)} KM/H` : '—';
     this.$('ai-target-speed').textContent = state ? `${(finite(state.desiredSpeed) * 3.6).toFixed(1)} KM/H` : '—';
@@ -272,7 +272,7 @@ export class HUD {
         ? `PIT ${pitState} · LIMIT ${vehicle.pitSpeedLimitMps ? Math.round(vehicle.pitSpeedLimitMps * 3.6) + ' KM/H' : 'OPEN'}`
         : context?.rlShadow?.enabled
           ? context?.rlMode === 'hybrid'
-            ? `RL HYBRID LIVE · ${Math.round((context.rlShadow.safetyIntervention ?? 0) * 100)}% SAFETY · ${context?.passQuality?.cleanPasses ?? 0} CLEAN PASSES`
+            ? `RL STAGE ${context.rlShadow.policyStage ?? 1} HYBRID LIVE · ${Math.round((context.rlShadow.safetyIntervention ?? 0) * 100)}% SAFETY · ${context?.passQuality?.cleanPasses ?? 0} CLEAN PASSES`
             : `RL SHADOW · ${Math.round((context.rlShadow.safetyIntervention ?? 0) * 100)}% SAFETY · CONTROLS HEURISTIC`
           : `CAMERA ${cameraMode} · T TELEMETRY · P PIT · R RESET`;
     }

@@ -5,45 +5,71 @@ import { initialReducedState } from './ReducedOrderVehicle.js';
 const LOOKAHEAD_M = [0, 18, 40, 70, 110, 160];
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 
-function trafficSnapshot(vehicle, vehicles, track) {
+function trafficSnapshots(vehicle, vehicles, track) {
   const length = track.length;
-  let nearest = null;
+  const snapshots = [];
   for (const opponent of vehicles) {
     if (opponent === vehicle || opponent.id === vehicle.id || opponent.retired) continue;
     let gap = opponent.distance - vehicle.distance;
     gap = ((gap + length * 0.5) % length + length) % length - length * 0.5;
-    const score = gap >= -7 ? Math.abs(gap) : Math.abs(gap) + 30;
-    if (!nearest || score < nearest.score) nearest = { opponent, gap, score };
+    const egoLateral = vehicle.surface?.lateral ?? 0;
+    const opponentLateral = opponent.surface?.lateral ?? 0;
+    const relativeLateral = opponentLateral - egoLateral;
+    const relativeSpeed = opponent.speed - vehicle.speed;
+    const closing = -relativeSpeed;
+    snapshots.push({ id: opponent.id, gap, egoLateral, opponentLateral, relativeLateral,
+      relativeSpeed, closing, ttc: gap > 0 && closing > 0.2 ? gap / closing : 99,
+      clearance: Math.abs(relativeLateral) - 1.9, ahead: gap > 0,
+      sideBySide: Math.abs(gap) < 5.5 });
   }
-  if (!nearest) return null;
-  const egoLateral = vehicle.surface?.lateral ?? 0;
-  const opponentLateral = nearest.opponent.surface?.lateral ?? 0;
-  const relativeLateral = opponentLateral - egoLateral;
-  const relativeSpeed = nearest.opponent.speed - vehicle.speed;
-  const closing = -relativeSpeed;
-  const ttc = nearest.gap > 0 && closing > 0.2 ? nearest.gap / closing : 99;
-  return { id: nearest.opponent.id, gap: nearest.gap, egoLateral, opponentLateral,
-    relativeLateral, relativeSpeed, closing, ttc,
-    clearance: Math.abs(relativeLateral) - 1.9, ahead: nearest.gap > 0,
-    sideBySide: Math.abs(nearest.gap) < 5.5 };
+  const nearest = (items, score) => items.reduce((best, item) => !best || score(item) < score(best) ? item : best, null);
+  const ahead = nearest(snapshots.filter((item) => item.gap > 0), (item) => item.gap);
+  const side = nearest(snapshots.filter((item) => Math.abs(item.gap) < 7),
+    (item) => Math.abs(item.gap) + Math.abs(item.relativeLateral) * 0.15);
+  const behind = nearest(snapshots.filter((item) => item.gap < 0), (item) => -item.gap);
+  const primary = nearest(snapshots, (item) => item.gap >= -7 ? Math.abs(item.gap) : Math.abs(item.gap) + 30);
+  return { all: snapshots, ahead, side, behind, primary };
 }
 
-function applyTrafficShield(decision, traffic) {
-  if (!traffic) return { ...decision, trafficIntervention: 0 };
+function trafficFeatures(traffic) {
+  if (!traffic) return [1.5, 0, 0, 0, 1.5, 1, 0, 0];
+  return [clamp(traffic.gap / 30, -1.5, 1.5), clamp(traffic.relativeLateral / 7.2, -1, 1),
+    clamp(traffic.relativeSpeed / 20, -1, 1), clamp(traffic.closing / 20, -1, 1),
+    clamp(traffic.ttc / 6, 0, 1.5), clamp(traffic.clearance / 4, -1, 1),
+    traffic.ahead ? 1 : 0, traffic.sideBySide ? 1 : 0];
+}
+
+function applyTrafficShield(decision, trafficSet, stage3 = false) {
+  const traffic = trafficSet.primary;
+  if (!traffic) return { ...decision, trafficIntervention: 0, boxedIn: false };
+  const nearby = trafficSet.all.filter((item) => Math.abs(item.gap) < 13 && Math.abs(item.relativeLateral) < 3.6);
+  const negativeBlocked = nearby.some((item) => item.relativeLateral < -0.25);
+  const positiveBlocked = nearby.some((item) => item.relativeLateral > 0.25);
+  const boxedIn = negativeBlocked && positiveBlocked;
   const collisionCourse = traffic.gap > 0 && traffic.gap < 32 && traffic.closing > 0.2
     && Math.abs(traffic.relativeLateral) < 3.4;
-  const overlapRisk = Math.abs(traffic.gap) < 5.8 && Math.abs(traffic.relativeLateral) < 2.35;
+  const corridorRisk = Math.abs(traffic.gap) < 18 && Math.abs(traffic.relativeLateral) < 3.1;
+  const overlapRisk = Math.abs(traffic.gap) < 9 && Math.abs(traffic.relativeLateral) < 2.7;
   const approach = collisionCourse ? Math.max(0.46, clamp((22 - traffic.gap) / 15, 0, 1)) : 0;
-  const overlap = overlapRisk ? 0.9 : 0;
-  const urgency = Math.max(approach, overlap);
-  const brakeUrgency = collisionCourse ? clamp((12 - traffic.gap) / 8, 0, 1) : 0;
-  const openSide = traffic.opponentLateral >= traffic.egoLateral ? -0.78 : 0.78;
+  const urgency = Math.max(approach, corridorRisk ? 0.68 : 0, overlapRisk ? 0.98 : 0);
+  let brakeUrgency = collisionCourse ? clamp((13 - traffic.gap) / 9, 0, 1) : 0;
+  if (corridorRisk && traffic.gap > 0) brakeUrgency = Math.max(brakeUrgency, 0.48);
+  if (overlapRisk && traffic.gap > 0) brakeUrgency = 1;
+  if (boxedIn) brakeUrgency = Math.max(brakeUrgency, urgency);
+  let openSide = traffic.opponentLateral >= traffic.egoLateral ? -0.78 : 0.78;
+  if (openSide < 0 && negativeBlocked && !positiveBlocked) openSide = 0.78;
+  if (openSide > 0 && positiveBlocked && !negativeBlocked) openSide = -0.78;
+  if (boxedIn) openSide = 0;
+  const geometricLine = trafficSet.ahead?.gap < 30
+    ? (trafficSet.ahead.opponentLateral >= trafficSet.ahead.egoLateral ? -0.66 : 0.66) : 0;
+  const requestedLine = stage3 ? geometricLine : decision.lineOffset;
   const safe = {
     ...decision,
-    lineOffset: decision.lineOffset * (1 - urgency) + openSide * urgency,
+    lineOffset: requestedLine * (1 - urgency) + openSide * urgency,
     pace: Math.min(decision.pace, 0.10 - brakeUrgency * 1.10),
     aggression: decision.aggression * (1 - urgency * 0.65),
-    ersStrategy: Math.min(decision.ersStrategy, 0.35 - brakeUrgency * 0.55)
+    ersStrategy: Math.min(decision.ersStrategy, 0.35 - brakeUrgency * 0.55),
+    boxedIn
   };
   safe.trafficIntervention = Math.max(Math.abs(safe.lineOffset - decision.lineOffset),
     Math.abs(safe.pace - decision.pace), Math.abs(safe.aggression - decision.aggression),
@@ -82,17 +108,15 @@ export class RLShadowController {
       state[1] / 7.2, state[2] / 0.5, state[3] / 80, state[4] / 2,
       state[5] / 0.3, state[6] / 1.5, state[7], ...curvature, ...targetSpeed
     ];
-    const traffic = trafficSnapshot(vehicle, vehicles, track);
+    const trafficSet = trafficSnapshots(vehicle, vehicles, track);
+    const traffic = trafficSet.primary;
     if ((this.policy.policy?.observationSize ?? 19) >= 27) {
-      values.push(traffic ? clamp(traffic.gap / 30, -1.5, 1.5) : 1.0,
-        traffic ? clamp(traffic.relativeLateral / 7.2, -1, 1) : 1.0,
-        traffic ? clamp(traffic.relativeSpeed / 20, -1, 1) : 0,
-        traffic ? clamp(traffic.closing / 20, -1, 1) : 0,
-        traffic ? clamp(traffic.ttc / 6, 0, 1.5) : 1.5,
-        traffic ? clamp(traffic.clearance / 4, -1, 1) : 1,
-        traffic?.ahead ? 1 : 0, traffic?.sideBySide ? 1 : 0);
+      if ((this.policy.policy?.observationSize ?? 19) >= 43) {
+        values.push(...trafficFeatures(trafficSet.ahead), ...trafficFeatures(trafficSet.side),
+          ...trafficFeatures(trafficSet.behind));
+      } else values.push(...trafficFeatures(traffic));
     }
-    return { state, observation: new Float32Array(values), traffic };
+    return { state, observation: new Float32Array(values), traffic, trafficSet };
   }
 
   update(vehicle, track, dt, vehicles = []) {
@@ -102,13 +126,16 @@ export class RLShadowController {
     // below `interval` when the epsilon admits a boundary tick, which caused
     // a second decision on the next simulation frame (~40 Hz instead of 20).
     this.clock = Math.max(0, this.clock - this.interval);
-    const { state, observation, traffic } = this.snapshot(vehicle, track, vehicles);
+    const { state, observation, traffic, trafficSet } = this.snapshot(vehicle, track, vehicles);
     const learnedDecision = this.policy.inferSafe(observation, state);
-    const decision = applyTrafficShield(learnedDecision, traffic);
+    const stage3 = observation.length >= 43;
+    const decision = applyTrafficShield(learnedDecision, trafficSet, stage3);
     this.last = Object.freeze({ ...decision, enabled: true, decisions: ++this.decisions,
       safetyIntervention: Math.max(decision.safetyIntervention ?? 0, decision.trafficIntervention ?? 0),
       opponentId: traffic?.id ?? null, opponentGapM: traffic?.gap ?? null,
       opponentTtcS: traffic?.ttc ?? null, sideBySide: traffic?.sideBySide ?? false,
+      boxedIn: decision.boxedIn, policyStage: stage3 ? 3 : observation.length >= 27 ? 2 : 1,
+      trafficSlots: stage3 ? [trafficSet.ahead?.id ?? null, trafficSet.side?.id ?? null, trafficSet.behind?.id ?? null] : null,
       observationSize: observation.length, timestampS: this.decisions * this.interval });
     vehicle.rlShadow = this.last;
     return this.last;

@@ -19,7 +19,7 @@ import { EnduranceScenarioVisuals } from './render/EnduranceScenarioVisuals.js';
 import { PitSystem, PIT_STATES, applyPitIntentToControls } from './simulation/PitSystem.js';
 import { PassQualityTracker } from './simulation/PassQuality.js';
 import { RLShadowController } from './ai/RLShadowController.js';
-import stage2Policy from '../rl/policies/stage2_multiagent_policy.json';
+import stage3Policy from '../rl/policies/stage3_pack_policy.json';
 
 const FIXED_TIMESTEP = 1 / 120;
 const MAX_STEPS_PER_FRAME = 14;
@@ -57,7 +57,7 @@ const player = new Vehicle({ id: 'player', name: driverNames[0], color: paint[0]
 const vehicles = [player];
 for (let i = 1; i <= 8; i += 1) vehicles.push(new Vehicle({ id: `ai-${i}`, name: driverNames[i], color: paint[i], spec: gridVariants[i] }));
 const controllers = new Map(vehicles.slice(1).map((vehicle, index) => [vehicle.id, new AIController(index + 1)]));
-const rlShadowControllers = new Map(vehicles.slice(1).map((vehicle) => [vehicle.id, new RLShadowController(stage2Policy)]));
+const rlShadowControllers = new Map(vehicles.slice(1).map((vehicle) => [vehicle.id, new RLShadowController(stage3Policy)]));
 const race = new RaceState(track, vehicles, 3);
 const pitSystem = new PitSystem(track, vehicles, ENDURANCE_PARK);
 const passQuality = new PassQualityTracker(track);

@@ -29,6 +29,7 @@
     "test:rl-hybrid-live": "node ./tests/rl-hybrid-live-contract.mjs",
     "test:ai-racecraft": "node ./tests/ai-racecraft-regression.mjs",
     "test:rl-multiagent": "node ./tests/rl-multiagent-contract.mjs",
+    "test:rl-pack": "node ./tests/rl-pack-contract.mjs",
     "test:pass-quality": "node ./tests/pass-quality-contract.mjs",
     "rl:export-track": "node ./tools/export-rl-track.mjs",
     "rl:parity": ".venv\\Scripts\\python.exe ./rl/test_parity.py",
@@ -40,6 +41,8 @@
     "rl:gpu:evaluate": "powershell -ExecutionPolicy Bypass -File ./tools/run-jax-gpu.ps1 evaluate",
     "rl:gpu:multi-train": "powershell -ExecutionPolicy Bypass -File ./tools/run-jax-gpu.ps1 multi-train",
     "rl:gpu:multi-evaluate": "powershell -ExecutionPolicy Bypass -File ./tools/run-jax-gpu.ps1 multi-evaluate",
+    "rl:gpu:pack-train": "wsl.exe -d Ubuntu -- bash -lc \"cd '/mnt/c/Users/Martim Costa/Desktop/nigger/gpt racing' && /opt/apex73-jax/bin/python rl/train_pack_ppo.py\"",
+    "rl:gpu:pack-evaluate": "wsl.exe -d Ubuntu -- bash -lc \"cd '/mnt/c/Users/Martim Costa/Desktop/nigger/gpt racing' && /opt/apex73-jax/bin/python rl/evaluate_pack.py rl/policies/stage3_pack_policy.json\"",
     "assets:build": "node ./tools/blender/run-assets.mjs",
     "assets:build:gt": "node ./tools/blender/run-assets.mjs --gt-only",
     "assets:check": "node ./tests/asset-pipeline.mjs"
