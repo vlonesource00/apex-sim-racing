@@ -22,7 +22,9 @@ import stage1Policy from '../rl/policies/stage1_policy_compact.json';
 
 const FIXED_TIMESTEP = 1 / 120;
 const MAX_STEPS_PER_FRAME = 14;
-const rlShadowEnabled = new URLSearchParams(window.location.search).get('rl') === 'shadow';
+const rlMode = new URLSearchParams(window.location.search).get('rl') ?? 'off';
+const rlShadowEnabled = rlMode === 'shadow' || rlMode === 'hybrid';
+const rlHybridEnabled = rlMode === 'hybrid';
 const app = document.querySelector('#app');
 const menu = document.querySelector('#start-menu');
 const menuStart = document.querySelector('[data-action="start-race"]');
@@ -176,8 +178,14 @@ function fixedStep() {
     }
   }
   pitSystem.update(FIXED_TIMESTEP, vehicles);
-  for (const vehicle of vehicles.slice(1)) controllers.get(vehicle.id).update(vehicle, vehicles, track, race, FIXED_TIMESTEP);
-  if (rlShadowEnabled) for (const vehicle of vehicles.slice(1)) rlShadowControllers.get(vehicle.id).update(vehicle, track, FIXED_TIMESTEP);
+  for (const vehicle of vehicles.slice(1)) {
+    const decision = rlShadowEnabled ? rlShadowControllers.get(vehicle.id).update(vehicle, track, FIXED_TIMESTEP) : null;
+    if (rlHybridEnabled && decision && decision.decisions !== vehicle.aiAppliedDecision) {
+      controllers.get(vehicle.id).setTacticalPolicy(decision);
+      vehicle.aiAppliedDecision = decision.decisions;
+    }
+    controllers.get(vehicle.id).update(vehicle, vehicles, track, race, FIXED_TIMESTEP);
+  }
   for (const vehicle of vehicles) applyPitIntentToControls(vehicle.controls, vehicle.pitIntent);
   const canDrive = race.phase === 'racing';
   updateAerodynamicWakes(vehicles);
@@ -255,6 +263,7 @@ function frame(now) {
     aiDebug: aiDebug.snapshot(),
     pit: pitSystem.status(player),
     rlShadow: rlShadowEnabled ? selectedAI?.rlShadow : null,
+    rlMode,
     spectatedName: cameraRig.mode === 'SPECTATE' ? selectedAI?.name : null
   });
   renderer.render(scene, camera);
@@ -274,6 +283,6 @@ window.__APEX73__ = {
   track, vehicles, visuals, environment, assets, metrics, race, controllers, aiDebug, cameraRig, rlShadowControllers,
   interactions: { updateAerodynamicWakes, resolveVehicleCollisions }, pitSystem, scenario: ENDURANCE_PARK,
   get enduranceVisuals() { return enduranceVisuals; },
-  startRace, selectClass, rlShadowEnabled, get raceStarted() { return raceStarted; }
+  startRace, selectClass, rlShadowEnabled, rlHybridEnabled, rlMode, get raceStarted() { return raceStarted; }
 };
 setTimeout(() => loadingScreen?.classList.add('dismissed'), 650);

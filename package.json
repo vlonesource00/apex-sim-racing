@@ -26,6 +26,8 @@
     "test:prototype-aero": "node ./tests/prototype-aero-balance-regression.mjs",
     "test:rl-js": "node ./tests/rl-hybrid-contract.mjs",
     "test:rl-shadow": "node ./tests/rl-shadow-contract.mjs",
+    "test:rl-hybrid-live": "node ./tests/rl-hybrid-live-contract.mjs",
+    "test:ai-racecraft": "node ./tests/ai-racecraft-regression.mjs",
     "rl:export-track": "node ./tools/export-rl-track.mjs",
     "rl:parity": ".venv\\Scripts\\python.exe ./rl/test_parity.py",
     "rl:benchmark": ".venv\\Scripts\\python.exe ./rl/benchmark.py",

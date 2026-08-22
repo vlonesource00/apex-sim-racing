@@ -169,8 +169,9 @@ export class HUD {
     this.$('ai-class').textContent = String(state?.classKey ?? state?.class ?? '—').toUpperCase();
     this.$('ai-mode').textContent = state?.mode ?? 'WAIT';
     const shadow = snapshot?.rlShadow;
+    const tactical = state?.tacticalPolicy;
     this.$('ai-reason').textContent = shadow?.enabled
-      ? `${state?.reason ?? 'AI ACTIVE'} · RL SHADOW ${Math.round(finite(shadow.safetyIntervention) * 100)}% SAFE`
+      ? `${state?.reason ?? 'AI ACTIVE'} · ${tactical?.source === 'RL_HYBRID' ? 'RL LIVE' : 'RL SHADOW'} ${Math.round(finite(shadow.safetyIntervention) * 100)}% SAFE`
       : state?.reason ?? 'WAITING FOR AI TELEMETRY';
     this.$('ai-speed').textContent = state ? `${(finite(state.currentSpeed) * 3.6).toFixed(1)} KM/H` : '—';
     this.$('ai-target-speed').textContent = state ? `${(finite(state.desiredSpeed) * 3.6).toFixed(1)} KM/H` : '—';
@@ -264,11 +265,13 @@ export class HUD {
       notice.textContent = cameraMode === 'FREE'
         ? 'NO-CLIP · WASD MOVE · Q/E HEIGHT · ARROWS LOOK · SHIFT BOOST · F6 EXIT'
         : cameraMode === 'SPECTATE'
-          ? `SPECTATE ${context?.spectatedName ?? 'AI'} · N NEXT · F5 EXIT${context?.rlShadow?.enabled ? ' · RL SHADOW' : ''}`
+          ? `SPECTATE ${context?.spectatedName ?? 'AI'} · N NEXT · F5 EXIT${context?.rlShadow?.enabled ? context?.rlMode === 'hybrid' ? ' · RL HYBRID LIVE' : ' · RL SHADOW' : ''}`
           : pitState !== 'NONE'
         ? `PIT ${pitState} · LIMIT ${vehicle.pitSpeedLimitMps ? Math.round(vehicle.pitSpeedLimitMps * 3.6) + ' KM/H' : 'OPEN'}`
         : context?.rlShadow?.enabled
-          ? `RL SHADOW · ${Math.round((context.rlShadow.safetyIntervention ?? 0) * 100)}% SAFETY · CONTROLS HEURISTIC`
+          ? context?.rlMode === 'hybrid'
+            ? `RL HYBRID LIVE · ${Math.round((context.rlShadow.safetyIntervention ?? 0) * 100)}% SAFETY · TACTICS LEARNED`
+            : `RL SHADOW · ${Math.round((context.rlShadow.safetyIntervention ?? 0) * 100)}% SAFETY · CONTROLS HEURISTIC`
           : `CAMERA ${cameraMode} · T TELEMETRY · P PIT · R RESET`;
     }
 

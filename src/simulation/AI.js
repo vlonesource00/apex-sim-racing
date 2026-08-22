@@ -17,11 +17,18 @@ export class AIController {
     this.lastDistance = null;
     this.passTime = 0;
     this.passOffset = 0;
+    this.passTargetId = null;
+    this.passPhase = 'NONE';
+    this.passCooldown = 0;
     this.debugEnabled = false;
     this.debugState = null;
     this.trafficThreat = 'CLEAR';
     this.trafficTTC = 99;
     this.predictedLateralSeparation = 99;
+    this.tacticalPolicy = null;
+    this.tacticalPolicyAge = Infinity;
+    this.adaptiveLineOffset = 0;
+    this.adaptiveClock = 0;
     this._debugPathClock = Infinity;
     this._debugPlanPath = [];
   }
@@ -37,6 +44,23 @@ export class AIController {
       this._debugPathClock = Infinity;
     }
     return this.debugEnabled;
+  }
+
+  setTacticalPolicy(decision = null) {
+    if (!decision || decision.source !== 'RL') {
+      this.tacticalPolicy = null;
+      this.tacticalPolicyAge = Infinity;
+      return false;
+    }
+    this.tacticalPolicy = Object.freeze({
+      lineOffset: clamp(finite(decision.lineOffset), -1, 1),
+      pace: clamp(finite(decision.pace), -1, 1),
+      aggression: clamp(finite(decision.aggression), -1, 1),
+      ersStrategy: clamp(finite(decision.ersStrategy), -1, 1),
+      safetyIntervention: clamp(finite(decision.safetyIntervention), 0, 2)
+    });
+    this.tacticalPolicyAge = 0;
+    return true;
   }
 
   _summary(entry) {
@@ -128,7 +152,7 @@ export class AIController {
       mode,
       reason,
       skill: finite(this.skill),
-      aggression: finite(this.aggression),
+      aggression: finite(vehicle.aiTactical?.effectiveAggression, this.aggression),
       currentSpeed: finite(currentSpeed),
       desiredSpeed: finite(desiredSpeed),
       currentSpeedMps: finite(currentSpeed),
@@ -165,15 +189,19 @@ export class AIController {
       planPath: this._debugPlanPath,
       path: this._debugPlanPath
     };
+    state.tacticalPolicy = vehicle.aiTactical ?? (this.tacticalPolicyAge < 0.35 && this.tacticalPolicy
+      ? { source: 'RL_HYBRID', ...this.tacticalPolicy }
+      : null);
     this.debugState = state;
   }
 
   update(vehicle, vehicles, track, race, dt) {
+    this.tacticalPolicyAge += dt;
     if (!vehicle._aiDynamicsConfigured) {
       // The AI already closes the loop on target speed and combined slip.
       // Higher TC layers double-govern launch torque and cost a full lap on
       // the close-to-line lead grid slot; retain ABS for braking control.
-      vehicle.setTCLevel?.(vehicle.classKey === 'prototype' ? 2 : 0);
+      vehicle.setTCLevel?.(vehicle.classKey === 'prototype' ? 2 : vehicle.classKey === 'gt' ? 1 : 0);
       vehicle.setABSLevel?.(6);
       if (vehicle.classKey === 'prototype') vehicle.setERSMode?.('AUTO');
       vehicle._aiDynamicsConfigured = true;
@@ -226,7 +254,21 @@ export class AIController {
     // spending a full corner applying throttle into the same state.
     if (this.stallTime > 0.55) this.recovery = Math.max(this.recovery, 1.35);
     const lookAhead = 11 + speed * 0.62;
-    let desiredOffset = this.baseOffset + Math.sin((vehicle.distance + this.index * 31) * 0.023) * 0.55;
+    const policy = this.tacticalPolicyAge < 0.35 ? this.tacticalPolicy : null;
+    const raceStatus = race.statusFor?.(vehicle) ?? {};
+    const racePressure = clamp(((raceStatus.position ?? 1) - 1) / Math.max(1, vehicles.length - 1), 0, 1);
+    const effectiveAggression = clamp(this.aggression + finite(policy?.aggression) * 0.12 + racePressure * 0.055, 0.34, 0.92);
+    this.adaptiveClock -= dt;
+    if (this.adaptiveClock <= 0) {
+      const maxWear = vehicle.wheels.reduce((maximum, wheel) => Math.max(maximum, finite(wheel.wear)), 0);
+      const gripDeficit = clamp(1 - finite(current.grip, 1), 0, 0.4);
+      const liveVariation = Math.sin(race.elapsed * (0.29 + this.index * 0.013) + vehicle.distance * 0.0009 + this.index * 1.7);
+      const policyBias = finite(policy?.lineOffset) * 1.15;
+      const conditionBias = liveVariation * (0.12 + maxWear * 0.28 + gripDeficit * 0.5);
+      this.adaptiveLineOffset = clamp(policyBias + conditionBias, -1.45, 1.45);
+      this.adaptiveClock = 1.35 + (this.index % 4) * 0.23;
+    }
+    let desiredOffset = this.baseOffset + this.adaptiveLineOffset;
     let closeFront = null;
     let closeBehind = null;
     let nearestSide = null;
@@ -269,7 +311,7 @@ export class AIController {
           };
         }
       }
-      if (delta > 0 && delta < 19 && longitudinal > -0.8 && Math.abs(side) < 4.4 && (!closeFront || delta < closeFront.delta)) closeFront = {
+      if (delta > 0 && delta < 30 && longitudinal > -1.2 && Math.abs(side) < 5.4 && (!closeFront || delta < closeFront.delta)) closeFront = {
         other, delta, lateralDelta, longitudinal, side,
         relativeSpeed: speed - other.speed,
         relativeLongitudinalVelocity, relativeLateralVelocity, ttc,
@@ -296,23 +338,65 @@ export class AIController {
     const recovering = isOffTrack || this.recovery > 0 || this.stallTime > 0.55;
 
     this.passTime = Math.max(0, this.passTime - dt);
-    const slowFront = closeFront && closeFront.other.speed < Math.max(3.4, speed * 0.62);
-    if (slowFront && closeFront.delta < 10 && !recovering && this.passTime <= 0) {
-      const passSide = Math.sign(-closeFront.side || (this.index % 2 ? 1 : -1));
-      this.passOffset = clamp(current.lateral + passSide * 3.45, -track.roadHalfWidth + 0.95, track.roadHalfWidth - 0.95);
-      this.passTime = Math.max(this.passTime, closeFront.delta < 7 ? 2.35 : 1.45);
+    this.passCooldown = Math.max(0, this.passCooldown - dt);
+    const activePassTarget = this.passTargetId
+      ? vehicles.find((candidate) => candidate.id === this.passTargetId && !candidate.finished && !candidate.despawned)
+      : null;
+    if (activePassTarget) {
+      const targetDelta = wrap(activePassTarget.distance - vehicle.distance + track.length * 0.5, track.length) - track.length * 0.5;
+      if (targetDelta < -4.5) {
+        // Once clear, return to the racing line rather than remaining parked
+        // beside the passed car. This is also the visible second half of a
+        // switchback/cutback move.
+        this.passTime = Math.max(this.passTime, 1.15);
+        this.passPhase = 'RETURN';
+        this.passOffset = this.baseOffset;
+        this.passTargetId = null;
+        this.passCooldown = 1.4;
+      } else if (this.passTime <= 0 || targetDelta > 34) {
+        this.passTargetId = null;
+        this.passPhase = 'NONE';
+        this.passCooldown = 0.7;
+      }
+    } else if (this.passTargetId) {
+      this.passTargetId = null;
+      this.passPhase = 'NONE';
+    }
+
+    const localCurvature = track.atDistance(vehicle.distance + clamp(12 + speed * 0.34, 16, 36)).curvature;
+    const passCorridorOpen = (localCurvature < 0.0048 && track.atDistance(vehicle.distance + 70).curvature < 0.007)
+      || (localCurvature < 0.012 && speed < 30 && closeFront?.delta < 6.5);
+    const sideLaneBlocked = nearestSide && nearestSide.other !== closeFront?.other && nearestSide.direct < 4.6;
+    const canAttackFront = closeFront && !recovering && !sideLaneBlocked && this.passCooldown <= 0 && this.passTime <= 0
+      && closeFront.delta < 18 && speed > 9
+      && (closeFront.relativeLongitudinalVelocity > 0.28 || closeFront.delta < 7.5)
+      && passCorridorOpen;
+    if (canAttackFront) {
+      const frontLateral = finite(closeFront.other.surface?.lateral, finite(current.lateral));
+      const roadEdge = track.roadHalfWidth - 1.05;
+      const clearance = 2.35;
+      const positiveRoom = roadEdge - frontLateral;
+      const negativeRoom = frontLateral + roadEdge;
+      let passSide = positiveRoom > negativeRoom ? 1 : -1;
+      if (nearestSide && nearestSide.other !== closeFront.other) passSide = Math.sign(-nearestSide.side || passSide);
+      this.passOffset = clamp(frontLateral + passSide * clearance, -roadEdge, roadEdge);
+      this.passTime = clamp(4.0 + closeFront.delta * 0.1, 4.2, 5.7);
+      this.passTargetId = closeFront.other.id;
+      // A blocked corner entry deliberately opens the line and cuts back;
+      // a normal speed differential commits to the available lane.
+      this.passPhase = localCurvature > 0.0048 && closeFront.delta < 6.5 ? 'SWITCHBACK' : 'ATTACK';
     }
 
     if (recovering) desiredOffset = 0;
     if (this.passTime > 0) desiredOffset = this.passOffset;
     else if (trafficThreatEntry) {
       const side = Math.sign(-trafficThreatEntry.side || (this.index % 2 ? 1 : -1));
-      desiredOffset += side * (1.65 + this.aggression * 0.85);
+      desiredOffset += side * (1.65 + effectiveAggression * 0.85);
     } else if (closeFront) {
       const side = closeFront.lateralDelta > 0 ? -1 : 1;
-      desiredOffset += side * (1.35 + this.aggression * 1.35);
+      desiredOffset += side * (1.35 + effectiveAggression * 1.35);
     }
-    if (closeBehind && this.aggression > 0.58 && Math.abs(closeBehind.lateralDelta) < 1.3) {
+    if (closeBehind && effectiveAggression > 0.58 && Math.abs(closeBehind.lateralDelta) < 1.3) {
       desiredOffset += closeBehind.lateralDelta >= 0 ? 0.85 : -0.85;
     }
     if (nearestSide) {
@@ -322,7 +406,8 @@ export class AIController {
     const pitIntent = vehicle.pitIntent;
     if (pitIntent?.active) desiredOffset = finite(pitIntent.targetLateralM, desiredOffset);
     if (this.mistake > 0) desiredOffset += Math.sin(race.elapsed * 5 + this.index) * this.mistake * 1.25;
-    const lineChangeRate = pitIntent?.active ? 4.4 : recovering || this.passTime > 0 ? 5.3 : 1.7;
+    const passLineRate = 0.7 + clamp((32 - speed) / 28, 0, 1) * 0.7;
+    const lineChangeRate = pitIntent?.active ? 3.2 : recovering ? 2.7 : this.passTime > 0 ? passLineRate : 1.25;
     this.lineOffset += (desiredOffset - this.lineOffset) * Math.min(1, dt * lineChangeRate);
     const lineMinimum = pitIntent?.active ? Math.min(-track.roadHalfWidth + 1.1, finite(pitIntent.targetLateralM) - 0.4) : -track.roadHalfWidth + 1.1;
     const lineMaximum = pitIntent?.active ? Math.max(track.roadHalfWidth - 1.1, finite(pitIntent.targetLateralM) + 0.4) : track.roadHalfWidth - 1.1;
@@ -346,16 +431,36 @@ export class AIController {
       // for its front axle to generate a meaningful restoring yaw moment.
       steer = clamp(headingError * 1.25 - lateralError * 0.035 - vehicle.yawRate * 0.1, -0.68, 0.68);
     }
-    if (nearestSide && nearestSide.direct < 3.4) steer += Math.sign((current.lateral ?? 0) - ((nearestSide.other.surface?.lateral) ?? 0) || 1) * 0.27;
+    if (nearestSide && nearestSide.direct < 3.4) {
+      const avoidanceAuthority = 0.1 + 0.17 * clamp((28 - speed) / 20, 0, 1);
+      steer += Math.sign((current.lateral ?? 0) - ((nearestSide.other.surface?.lateral) ?? 0) || 1) * avoidanceAuthority;
+    }
+    const bodySlip = Math.atan2(finite(vehicle.localVelocity?.x), Math.max(3, Math.abs(finite(vehicle.localVelocity?.z, speed))));
+    const instability = clamp(Math.max((Math.abs(bodySlip) - 0.105) / 0.16, (Math.abs(vehicle.yawRate) - 0.82) / 1.1), 0, 1);
+    if (!recovering && instability > 0) steer *= 1 - instability * 0.34;
     // The generic track envelope is deliberately conservative. Class pace
     // lets high-downforce prototypes exploit their mechanical/aero capacity
     // while touring cars retain their lower corner/straight performance.
     const classPace = vehicle.classKey === 'prototype' ? 1 : vehicle.classKey === 'touring' ? 0.96 : 1;
     const cornerSpeed = track.targetSpeed(vehicle.distance + lookAhead * 0.75, this.skill) * classPace;
-    let desiredSpeed = cornerSpeed * (0.85 + this.aggression * 0.08 - this.mistake * 0.14);
+    const straightAhead = localCurvature < 0.0036;
+    const policyPace = finite(policy?.pace) * 0.025;
+    const pace = (straightAhead
+      ? 1.005 + this.skill * 0.018 + effectiveAggression * 0.008
+      : 0.85 + effectiveAggression * 0.08 - this.mistake * 0.14) + policyPace;
+    let desiredSpeed = cornerSpeed * pace;
+    vehicle.aiTactical = {
+      source: policy ? 'RL_HYBRID' : 'HEURISTIC',
+      lineBiasM: this.adaptiveLineOffset,
+      paceDelta: policyPace,
+      effectiveAggression,
+      passPhase: this.passPhase,
+      safetyIntervention: finite(policy?.safetyIntervention)
+    };
     if (recovering) desiredSpeed = current.zone === 'grass' ? 13 : 17;
     const speedError = desiredSpeed - speed;
-    let throttle = clamp(speedError * 0.12, 0, 1);
+    const throttleFeedForward = straightAhead ? 0.92 : 0.42;
+    let throttle = speedError > -0.25 ? clamp(throttleFeedForward + speedError * 0.14, 0, 1) : 0;
     let brake = clamp((-speedError - 1.2) * 0.14, 0, 1);
     if (recovering) {
       // Recovery maintains enough drive to turn out of grass/runoff instead of repeatedly braking to a stop.
@@ -369,22 +474,32 @@ export class AIController {
       );
       if (needsEmergencyBrake) { throttle = 0; brake = Math.max(brake, 0.5); }
       if (current.zone === 'grass') { throttle *= 0.25; brake = Math.max(brake, 0.28); }
+      if (instability > 0) {
+        throttle *= 1 - instability * 0.7;
+        // Trail-braking a rotating car is a common source of the observed
+        // spins; release non-emergency brake pressure while it regains yaw.
+        if (!needsEmergencyBrake) brake *= 1 - instability * 0.65;
+      }
     }
     vehicle.controls.steer = clamp(steer, -1, 1);
     vehicle.controls.throttle = throttle;
     vehicle.controls.brake = brake;
     vehicle.controls.handbrake = 0;
+    if (vehicle.classKey === 'prototype' && policy) {
+      const attack = this.passTime > 0 || policy.ersStrategy > 0.18;
+      vehicle.setERSMode?.(attack ? 'ATTACK' : 'AUTO');
+    }
     vehicle.aiTarget = { x: targetX, z: targetZ, lateral: targetOffset };
     if (this.debugEnabled) {
       const targetY = finite(target.y) + Math.sin(finite(target.bank)) * targetOffset;
-      const defending = closeBehind && this.aggression > 0.58 && Math.abs(closeBehind.lateralDelta) < 1.3;
+      const defending = closeBehind && effectiveAggression > 0.58 && Math.abs(closeBehind.lateralDelta) < 1.3;
       let mode = 'RACE';
       let reason = 'OPEN_RACING_LINE';
       if (pitIntent?.active) { mode = 'PIT'; reason = `PIT_${pitIntent.state ?? 'ACTIVE'}`; }
       else if (recovering) { mode = 'RECOVER'; reason = isOffTrack ? 'OFF_TRACK_RECOVERY' : 'STALL_RECOVERY'; }
+      else if (this.passTime > 0) { mode = 'PASS'; reason = this.passPhase === 'SWITCHBACK' ? 'SWITCHBACK_CUTBACK' : this.passPhase === 'RETURN' ? 'PASS_RETURN_TO_LINE' : 'PASS_COMMIT'; }
       else if (trafficThreat !== 'CLEAR') { mode = 'AVOID'; reason = `TRAFFIC_${trafficThreat}`; }
       else if (nearestSide) { mode = 'AVOID'; reason = 'NEAREST_SIDE_CAR'; }
-      else if (this.passTime > 0) { mode = 'PASS'; reason = 'PASS_WINDOW'; }
       else if (defending) { mode = 'DEFEND'; reason = 'CLOSE_BEHIND'; }
       else if (brake > 0.08) { mode = 'BRAKE'; reason = 'TARGET_SPEED_BRAKE'; }
       else if (closeFront) { mode = 'FOLLOW'; reason = 'CLOSE_FRONT'; }

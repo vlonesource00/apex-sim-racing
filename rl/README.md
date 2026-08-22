@@ -36,7 +36,12 @@ Measured on the local RTX 5060 Ti:
 - Unseen evaluation: 0.0992% reset rate versus 0.1000% for the heuristic, with lower tire utilisation but approximately 1% less progress.
 - JavaScript/JAX 500-frame parity error: below `7e-16` in float64.
 
-These are reduced-order high-level-policy numbers, not full `Vehicle.js` throughput. The policy remains opt-in shadow telemetry at `?rl=shadow`; it cannot mutate live controls.
+These are reduced-order high-level-policy numbers, not full `Vehicle.js` throughput.
+
+- `?rl=shadow` logs learned decisions and cannot mutate live controls.
+- `?rl=hybrid` applies the safety-shielded learned line, pace, aggression and ERS outputs to the live tactical planner at exactly 20 Hz. The deterministic controller still owns steering, throttle, braking, collision avoidance and recovery.
+
+The accepted Stage-1 policy was trained without opponent observations. In hybrid mode, live traffic tactics (passing, switchbacks, defending, TTC and side-by-side avoidance) therefore remain deterministic safety/racecraft logic around the learned line-and-pace policy. Multi-agent traffic learning remains a later curriculum stage; this boundary is intentional and visible in the debugger.
 
 ## Next curriculum stages
 
@@ -44,5 +49,5 @@ These are reduced-order high-level-policy numbers, not full `Vehicle.js` through
 2. Domain randomization for grip, tire wear, aero balance and car class.
 3. Ghost traffic observations and overtake-side actions.
 4. Contact-enabled multi-agent self-play behind a deterministic safety shield.
-5. Browser shadow mode, where RL decisions are logged but do not control cars.
-6. Opt-in live A/B testing against the heuristic controller.
+5. Browser shadow mode, where RL decisions are logged but do not control cars. Complete.
+6. Opt-in live A/B testing against the heuristic controller. Initial hybrid tactical integration complete; multi-agent training remains.

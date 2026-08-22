@@ -34,6 +34,9 @@ assert.match(main, /aiDebug\.cycleSelection\(\)/);
 assert.match(main, /cameraRig\.setSpectate\(\)/);
 assert.match(main, /cameraRig\.setFree\(\)/);
 assert.match(main, /cameraRig\.updateFree\(input\.freeCameraRaw\(\), rawDelta\)/);
+assert.match(main, /rlMode === 'hybrid'/);
+assert.match(main, /setTacticalPolicy\(decision\)/);
+assert.match(hud, /RL HYBRID LIVE/);
 assert.match(main, /race\.standings\(player\)/);
 assert.match(main, /controllers, aiDebug/);
 for (const token of ['.standings-panel', '.electronics-panel', '.ai-panel', '.driver-cluster', '.gear-cluster', '.motec', '@media (max-width: 640px)']) {

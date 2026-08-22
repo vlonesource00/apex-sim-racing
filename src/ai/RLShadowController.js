@@ -41,7 +41,10 @@ export class RLShadowController {
   update(vehicle, track, dt) {
     this.clock += dt;
     if (this.clock + 1e-9 < this.interval) return this.last;
-    this.clock %= this.interval;
+    // Subtract one fixed decision quantum. `%` can preserve a value just
+    // below `interval` when the epsilon admits a boundary tick, which caused
+    // a second decision on the next simulation frame (~40 Hz instead of 20).
+    this.clock = Math.max(0, this.clock - this.interval);
     const { state, observation } = this.snapshot(vehicle, track);
     const decision = this.policy.inferSafe(observation, state);
     this.last = Object.freeze({ ...decision, enabled: true, decisions: ++this.decisions,
