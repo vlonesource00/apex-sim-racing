@@ -35,7 +35,8 @@ def collect_rollout(parameters, initial_state, key, track, horizon: int):
 
 def main():
     parser = argparse.ArgumentParser(description="Train a parameter-shared four-car pack-racing policy.")
-    parser.add_argument("--envs", type=int, default=512)
+    parser.add_argument("--envs", type=int, default=1024,
+                        help="Parallel four-car packs (1024 packs = 4096 cars).")
     parser.add_argument("--horizon", type=int, default=128)
     parser.add_argument("--updates", type=int, default=256)
     parser.add_argument("--epochs", type=int, default=4)
@@ -83,9 +84,10 @@ def main():
     elapsed = time.perf_counter() - started
     agent_steps = args.envs * PACK_CARS * args.horizon * args.updates
     metadata = {"stage": "stage3-parameter-shared-pack-self-play", "seed": args.seed,
-                "environmentCount": args.envs, "carsPerEnvironment": PACK_CARS, "horizon": args.horizon,
+                "environmentCount": args.envs, "carsPerEnvironment": PACK_CARS,
+                "parallelCars": args.envs * PACK_CARS, "horizon": args.horizon,
                 "updates": args.updates, "agentTransitions": agent_steps,
-                "stepsPerSecond": round(agent_steps / max(elapsed, 1e-6)),
+                "agentTransitionsPerSecond": round(agent_steps / max(elapsed, 1e-6)),
                 "trafficSlots": ["nearest-ahead", "nearest-side", "nearest-behind"],
                 "cleanPassRule": "shared-policy crossover plus 5m clearance held for 1s without contact",
                 "finalTrainingMetrics": history[-1] if history else {}}
