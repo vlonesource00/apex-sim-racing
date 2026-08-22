@@ -1,4 +1,7 @@
 node_modules/
+.venv/
+__pycache__/
+*.py[cod]
 dist/
 coverage/
 *.log
@@ -9,3 +12,4 @@ coverage/
 Thumbs.db
 *.blend1
 *.blend2
+rl/artifacts/

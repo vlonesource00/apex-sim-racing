@@ -4,7 +4,8 @@ import { KeyboardDynamics } from './input/KeyboardDynamics.js';
 
 const GAME_CODES = new Set([
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space',
-  'BracketLeft', 'BracketRight', 'Semicolon', 'Quote', 'KeyE', 'KeyP', 'F3', 'F4', 'KeyN'
+  'BracketLeft', 'BracketRight', 'Semicolon', 'Quote', 'KeyE', 'KeyP', 'KeyQ',
+  'F3', 'F4', 'F5', 'F6', 'KeyN'
 ]);
 
 const padValue = (button) => clamp(typeof button === 'number' ? button : button?.value ?? 0, 0, 1);
@@ -41,6 +42,17 @@ export class InputManager {
       brake: this.held('KeyS', 'ArrowDown') ? 1 : 0,
       steer: playerSteerFromScreenAxis(screenAxis),
       handbrake: this.held('Space') ? 1 : 0
+    };
+  }
+
+  freeCameraRaw() {
+    return {
+      forward: (this.held('KeyW') ? 1 : 0) - (this.held('KeyS') ? 1 : 0),
+      right: (this.held('KeyD') ? 1 : 0) - (this.held('KeyA') ? 1 : 0),
+      up: (this.held('KeyE') ? 1 : 0) - (this.held('KeyQ') ? 1 : 0),
+      yaw: (this.held('ArrowRight') ? 1 : 0) - (this.held('ArrowLeft') ? 1 : 0),
+      pitch: (this.held('ArrowUp') ? 1 : 0) - (this.held('ArrowDown') ? 1 : 0),
+      boost: this.held('ShiftLeft', 'ShiftRight')
     };
   }
 

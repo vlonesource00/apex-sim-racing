@@ -107,7 +107,7 @@ export class HUD {
         <span>STEER <b data-role="steer">—</b></span><span>G <b data-role="gforce">0.00</b></span>
       </div>
 
-      <div class="help">WASD / ARROWS DRIVE · SPACE HANDBRAKE · C CAMERA · T TELEMETRY · P PIT REQUEST<br>[ / ] TC · ; / ' ABS · B BRAKE BIAS · E ERS · R RESET · M MUTE · F3 AI DEBUG · F4 FIELD · N NEXT AI</div>
+      <div class="help">WASD / ARROWS DRIVE · SPACE HANDBRAKE · C CAMERA · T TELEMETRY · P PIT REQUEST<br>[ / ] TC · ; / ' ABS · B BRAKE BIAS · E ERS · R RESET · M MUTE · F3 AI DEBUG · F4 FIELD · N NEXT AI · F5 SPECTATE · F6 NO-CLIP</div>
       <button class="mute" data-role="mute" type="button">AUDIO: ON</button>
 
       <div class="finish" data-role="finish">
@@ -168,7 +168,10 @@ export class HUD {
     this.$('ai-name').textContent = snapshot.selectedName ?? state?.name ?? '—';
     this.$('ai-class').textContent = String(state?.classKey ?? state?.class ?? '—').toUpperCase();
     this.$('ai-mode').textContent = state?.mode ?? 'WAIT';
-    this.$('ai-reason').textContent = state?.reason ?? 'WAITING FOR AI TELEMETRY';
+    const shadow = snapshot?.rlShadow;
+    this.$('ai-reason').textContent = shadow?.enabled
+      ? `${state?.reason ?? 'AI ACTIVE'} · RL SHADOW ${Math.round(finite(shadow.safetyIntervention) * 100)}% SAFE`
+      : state?.reason ?? 'WAITING FOR AI TELEMETRY';
     this.$('ai-speed').textContent = state ? `${(finite(state.currentSpeed) * 3.6).toFixed(1)} KM/H` : '—';
     this.$('ai-target-speed').textContent = state ? `${(finite(state.desiredSpeed) * 3.6).toFixed(1)} KM/H` : '—';
     this.$('ai-offset').textContent = state ? `${fixed(state.targetOffset)} M` : '—';
@@ -258,7 +261,15 @@ export class HUD {
       countdown.textContent = 'GO'; countdown.className = 'countdown go'; notice.textContent = `CAMERA ${cameraMode} · T TELEMETRY`;
     } else {
       countdown.className = 'countdown hidden';
-      notice.textContent = pitState !== 'NONE' ? `PIT ${pitState} · LIMIT ${vehicle.pitSpeedLimitMps ? Math.round(vehicle.pitSpeedLimitMps * 3.6) + ' KM/H' : 'OPEN'}` : `CAMERA ${cameraMode} · T TELEMETRY · P PIT · R RESET`;
+      notice.textContent = cameraMode === 'FREE'
+        ? 'NO-CLIP · WASD MOVE · Q/E HEIGHT · ARROWS LOOK · SHIFT BOOST · F6 EXIT'
+        : cameraMode === 'SPECTATE'
+          ? `SPECTATE ${context?.spectatedName ?? 'AI'} · N NEXT · F5 EXIT${context?.rlShadow?.enabled ? ' · RL SHADOW' : ''}`
+          : pitState !== 'NONE'
+        ? `PIT ${pitState} · LIMIT ${vehicle.pitSpeedLimitMps ? Math.round(vehicle.pitSpeedLimitMps * 3.6) + ' KM/H' : 'OPEN'}`
+        : context?.rlShadow?.enabled
+          ? `RL SHADOW · ${Math.round((context.rlShadow.safetyIntervention ?? 0) * 100)}% SAFETY · CONTROLS HEURISTIC`
+          : `CAMERA ${cameraMode} · T TELEMETRY · P PIT · R RESET`;
     }
 
     this._updateStandings(context?.leaderboard, vehicle.id);

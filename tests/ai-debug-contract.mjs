@@ -70,6 +70,7 @@ assert.equal(debugRenderer.entries[0].line.visible, true);
 assert.equal(debugRenderer.entries[0].marker.visible, true);
 assert.equal(debugRenderer.entries[0].material.depthTest, true);
 assert.equal(debugRenderer.snapshot().selectedId, 'ai-1');
+assert.equal(debugRenderer.selectedVehicle(), on.ai);
 assert.equal(debugRenderer.snapshot().fieldView, false);
 debugRenderer.setFieldView(true);
 assert.equal(debugRenderer.snapshot().fieldView, true);

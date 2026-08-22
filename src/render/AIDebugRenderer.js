@@ -126,6 +126,8 @@ export class AIDebugRenderer {
 
   _selectedEntry() { return this.entries[this.selectionIndex] ?? null; }
 
+  selectedVehicle() { return this._selectedEntry()?.vehicle ?? null; }
+
   _refreshStyles() {
     for (const [index, entry] of this.entries.entries()) {
       const state = entry.controller.debugState;
@@ -184,7 +186,8 @@ export class AIDebugRenderer {
     const state = selected?.controller.debugState ?? null;
     if (!state) return {
       enabled: this.visible, fieldView: this.fieldView,
-      selectedId: selected?.vehicle.id ?? null, selectedName: selected?.vehicle.name ?? null, state: null
+      selectedId: selected?.vehicle.id ?? null, selectedName: selected?.vehicle.name ?? null,
+      rlShadow: selected?.vehicle.rlShadow ?? null, state: null
     };
     return {
       ...state,
@@ -192,6 +195,7 @@ export class AIDebugRenderer {
       fieldView: this.fieldView,
       selectedId: selected.vehicle.id,
       selectedName: selected.vehicle.name,
+      rlShadow: selected.vehicle.rlShadow ?? null,
       state
     };
   }

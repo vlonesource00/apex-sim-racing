@@ -24,11 +24,16 @@ assert.match(hud, /< 100/);
 assert.match(hud, /GAP \/ M/);
 assert.match(input, /'F3'/);
 assert.match(input, /'F4'/);
+assert.match(input, /'F5'/);
+assert.match(input, /'F6'/);
 assert.match(input, /'KeyP'/);
 assert.match(input, /'KeyN'/);
 assert.match(main, /aiDebug\.toggle\(\)/);
 assert.match(main, /aiDebug\.toggleFieldView\(\)/);
 assert.match(main, /aiDebug\.cycleSelection\(\)/);
+assert.match(main, /cameraRig\.setSpectate\(\)/);
+assert.match(main, /cameraRig\.setFree\(\)/);
+assert.match(main, /cameraRig\.updateFree\(input\.freeCameraRaw\(\), rawDelta\)/);
 assert.match(main, /race\.standings\(player\)/);
 assert.match(main, /controllers, aiDebug/);
 for (const token of ['.standings-panel', '.electronics-panel', '.ai-panel', '.driver-cluster', '.gear-cluster', '.motec', '@media (max-width: 640px)']) {

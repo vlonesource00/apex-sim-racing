@@ -17,9 +17,12 @@ import { HUD } from './ui/HUD.js';
 import { ENDURANCE_PARK } from './scenarios/EndurancePark.js';
 import { EnduranceScenarioVisuals } from './render/EnduranceScenarioVisuals.js';
 import { PitSystem, PIT_STATES, applyPitIntentToControls } from './simulation/PitSystem.js';
+import { RLShadowController } from './ai/RLShadowController.js';
+import stage1Policy from '../rl/policies/stage1_policy_compact.json';
 
 const FIXED_TIMESTEP = 1 / 120;
 const MAX_STEPS_PER_FRAME = 14;
+const rlShadowEnabled = new URLSearchParams(window.location.search).get('rl') === 'shadow';
 const app = document.querySelector('#app');
 const menu = document.querySelector('#start-menu');
 const menuStart = document.querySelector('[data-action="start-race"]');
@@ -51,6 +54,7 @@ const player = new Vehicle({ id: 'player', name: driverNames[0], color: paint[0]
 const vehicles = [player];
 for (let i = 1; i <= 8; i += 1) vehicles.push(new Vehicle({ id: `ai-${i}`, name: driverNames[i], color: paint[i], spec: gridVariants[i] }));
 const controllers = new Map(vehicles.slice(1).map((vehicle, index) => [vehicle.id, new AIController(index + 1)]));
+const rlShadowControllers = new Map(vehicles.slice(1).map((vehicle) => [vehicle.id, new RLShadowController(stage1Policy)]));
 const race = new RaceState(track, vehicles, 3);
 const pitSystem = new PitSystem(track, vehicles, ENDURANCE_PARK);
 
@@ -158,7 +162,9 @@ function restartRace() {
 function fixedStep() {
   if (!raceStarted) return;
   race.step(FIXED_TIMESTEP);
-  Object.assign(player.controls, input.controls(player, FIXED_TIMESTEP));
+  Object.assign(player.controls, cameraRig.mode === 'FREE'
+    ? { throttle: 0, brake: 0, steer: 0, handbrake: 0 }
+    : input.controls(player, FIXED_TIMESTEP));
   pitDecisionClock += FIXED_TIMESTEP;
   if (pitDecisionClock >= 1) {
     pitDecisionClock = 0;
@@ -171,6 +177,7 @@ function fixedStep() {
   }
   pitSystem.update(FIXED_TIMESTEP, vehicles);
   for (const vehicle of vehicles.slice(1)) controllers.get(vehicle.id).update(vehicle, vehicles, track, race, FIXED_TIMESTEP);
+  if (rlShadowEnabled) for (const vehicle of vehicles.slice(1)) rlShadowControllers.get(vehicle.id).update(vehicle, track, FIXED_TIMESTEP);
   for (const vehicle of vehicles) applyPitIntentToControls(vehicle.controls, vehicle.pitIntent);
   const canDrive = race.phase === 'racing';
   updateAerodynamicWakes(vehicles);
@@ -185,6 +192,15 @@ function processActions() {
   if (input.consume('F3')) aiDebug.toggle();
   if (input.consume('F4')) aiDebug.toggleFieldView();
   if (input.consume('KeyN')) aiDebug.cycleSelection();
+  if (input.consume('F5')) {
+    aiDebug.setVisible(true);
+    const mode = cameraRig.setSpectate();
+    playerVisual.setCockpitView(mode === 'COCKPIT');
+  }
+  if (input.consume('F6')) {
+    const mode = cameraRig.setFree();
+    playerVisual.setCockpitView(mode === 'COCKPIT');
+  }
   if (!raceStarted) return;
   if (input.consume('KeyC')) playerVisual.setCockpitView(cameraRig.toggle() === 'COCKPIT');
   if (input.consume('KeyM')) hud.setMuted(audio.toggleMute());
@@ -222,7 +238,10 @@ function frame(now) {
   environment.update(rawDelta);
   enduranceVisuals?.update(rawDelta, vehicles, race);
   aiDebug.update();
-  cameraRig.update(player, rawDelta, cameraRig.mode === 'COCKPIT' ? playerVisual.getCockpitPose() : null);
+  const selectedAI = aiDebug.selectedVehicle();
+  if (cameraRig.mode === 'FREE') cameraRig.updateFree(input.freeCameraRaw(), rawDelta);
+  else if (cameraRig.mode === 'SPECTATE' && selectedAI) cameraRig.update(selectedAI, rawDelta);
+  else cameraRig.update(player, rawDelta, cameraRig.mode === 'COCKPIT' ? playerVisual.getCockpitPose() : null);
   if (raceStarted) audio.update(player, rawDelta);
   frameCounter += 1;
   if (now - metricsAt > 500) {
@@ -234,7 +253,9 @@ function frame(now) {
   hud.update(player, race.statusFor(player), metrics, cameraRig.mode, raceStarted, {
     leaderboard: race.standings(player),
     aiDebug: aiDebug.snapshot(),
-    pit: pitSystem.status(player)
+    pit: pitSystem.status(player),
+    rlShadow: rlShadowEnabled ? selectedAI?.rlShadow : null,
+    spectatedName: cameraRig.mode === 'SPECTATE' ? selectedAI?.name : null
   });
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
@@ -250,9 +271,9 @@ window.addEventListener('resize', () => {
 });
 requestAnimationFrame(frame);
 window.__APEX73__ = {
-  track, vehicles, visuals, environment, assets, metrics, race, controllers, aiDebug,
+  track, vehicles, visuals, environment, assets, metrics, race, controllers, aiDebug, cameraRig, rlShadowControllers,
   interactions: { updateAerodynamicWakes, resolveVehicleCollisions }, pitSystem, scenario: ENDURANCE_PARK,
   get enduranceVisuals() { return enduranceVisuals; },
-  startRace, selectClass, get raceStarted() { return raceStarted; }
+  startRace, selectClass, rlShadowEnabled, get raceStarted() { return raceStarted; }
 };
 setTimeout(() => loadingScreen?.classList.add('dismissed'), 650);
