@@ -14,7 +14,7 @@ const { payload } = runSoloAILap({ classKey: human.summary.vehicleClass, referen
 if (!payload?.complete) throw new Error('AI benchmark did not complete a lap');
 if (outputPath) fs.writeFileSync(outputPath, JSON.stringify(payload));
 const ai = new ReferenceLapProfile(payload);
-const comparison = human.distanceDeltaReport(ai);
+const comparison = human.distanceDeltaReport(ai, { binSizeM: 10 });
 console.log(JSON.stringify({ human: human.summary, ai: ai.summary, benchmark: payload.benchmark,
   comparison: compact ? { ...human.compare(ai), binSizeM: comparison.binSizeM,
     largestLosses: comparison.largestLosses, largestGains: comparison.largestGains } : comparison }, null, 2));

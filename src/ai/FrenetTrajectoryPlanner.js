@@ -53,8 +53,10 @@ export class FrenetTrajectoryPlanner {
       const world = index === 0
         ? { x: finite(vehicle.position.x), y: finite(vehicle.position.y) + 0.08, z: finite(vehicle.position.z) }
         : track.lateralPoint(reference, lateral, 0.08);
-      if (Math.abs(lateral) > roadMargin) roadViolation += Math.abs(lateral) - roadMargin + 1;
-      edgeRisk += Math.max(0, Math.abs(lateral) - (roadMargin - 0.7)) ** 2;
+      const surfaceLimit = Math.min(roadMargin,
+        finite(track.planningLateralLimit?.(reference.s, lateral), roadMargin));
+      if (Math.abs(lateral) > surfaceLimit) roadViolation += Math.abs(lateral) - surfaceLimit + 1;
+      edgeRisk += Math.max(0, Math.abs(lateral) - (surfaceLimit - 0.45)) ** 2;
 
       for (const entry of trafficEntries) {
         if (!entry?.other || entry.other.finished || entry.other.despawned || entry.other.trafficGhost) continue;
@@ -127,7 +129,9 @@ export class FrenetTrajectoryPlanner {
     lookAhead = 12, trackingDistance = null
   }) {
     const currentLateral = finite(vehicle?.surface?.lateral);
-    const margin = Math.max(1.8, finite(roadMargin, finite(track?.roadHalfWidth, 6.5) - 1.1));
+    const maximumSurfaceMargin = finite(track?.roadHalfWidth, 6.5) - 1.18
+      + Math.min(0.42, finite(track?.curbWidth) * 0.32);
+    const margin = Math.max(1.8, finite(roadMargin, maximumSurfaceMargin));
     const intendedOffset = clamp(finite(desiredOffset), -margin, margin);
     const committed = pitActive || PASS_PHASES.has(racecraftPhase);
     const urgentManeuver = committed || recovering || urgent;

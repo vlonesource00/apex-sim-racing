@@ -49,6 +49,8 @@ export class AIController {
     this.predictedLateralSeparation = 99;
     this.referenceProfile = null;
     this.referenceTuning = { paceCapMps: 16, trajectoryPaceFactor: 0.93 };
+    this.ersPlan = { previousDistance: null, travelledM: 0, lapIndex: 0, lapStartSoc: null,
+      targetSoc: null, mode: 'AUTO' };
   }
 
   setReferenceProfile(profile = null) {
@@ -62,6 +64,44 @@ export class AIController {
       trajectoryPaceFactor: clamp(finite(tuning.trajectoryPaceFactor,
         this.referenceTuning.trajectoryPaceFactor), 0, 1)
     };
+  }
+
+  _planERS(vehicle, track, { committed = false, straight = false, throttle = 0,
+    referenceTarget = null } = {}) {
+    if (!vehicle.ers?.enabled) return 'OFF';
+    const plan = this.ersPlan;
+    const currentDistance = finite(vehicle.distance);
+    if (plan.previousDistance === null) {
+      plan.previousDistance = currentDistance;
+      plan.lapStartSoc = finite(vehicle.ers.soc);
+    } else {
+      const delta = wrap(currentDistance - plan.previousDistance + track.length * 0.5, track.length)
+        - track.length * 0.5;
+      plan.travelledM += Math.max(0, delta);
+      plan.previousDistance = currentDistance;
+    }
+    const lapIndex = Math.floor(plan.travelledM / Math.max(1, track.length));
+    if (lapIndex !== plan.lapIndex) {
+      plan.lapIndex = lapIndex;
+      plan.lapStartSoc = finite(vehicle.ers.soc);
+    }
+    const lapProgress = (plan.travelledM % Math.max(1, track.length)) / Math.max(1, track.length);
+    const humanSpend = this.referenceProfile
+      ? clamp(finite(this.referenceProfile.summary?.ersUsedPct) / 100, 0.12, 0.48) : 0.34;
+    const tacticalReserve = committed ? 0.07 : 0.12;
+    const plannedSpend = Math.min(humanSpend, Math.max(0, finite(plan.lapStartSoc) - tacticalReserve));
+    const targetSoc = Math.max(tacticalReserve, finite(plan.lapStartSoc) - plannedSpend * lapProgress);
+    const surplus = finite(vehicle.ers.soc) - targetSoc;
+    const referenceDeploy = finite(referenceTarget?.throttle) > 0.94
+      && finite(referenceTarget?.brake) < 0.02;
+    const canAttack = finite(vehicle.ers.soc) > vehicle.ers.minSoc + 0.035;
+    const attack = canAttack && (committed
+      || (straight && throttle > 0.82 && surplus > 0.008)
+      || (referenceDeploy && throttle > 0.9 && surplus > 0.02)
+      || (lapProgress > 0.82 && throttle > 0.86 && surplus > 0.012));
+    plan.targetSoc = targetSoc;
+    plan.mode = attack ? 'ATTACK' : 'AUTO';
+    return plan.mode;
   }
 
   setDebugEnabled(enabled) {
@@ -136,6 +176,7 @@ export class AIController {
       trafficThreat: this.trafficThreat, trafficTTC: finite(this.trafficTTC, 99), ttc: finite(this.trafficTTC, 99),
       predictedLateralSeparationM: finite(this.predictedLateralSeparation, 99), predictedSeparationM: finite(this.predictedLateralSeparation, 99),
       closeFront: this._summary(traffic.ahead), closeBehind: this._summary(traffic.behind), nearestSide: this._summary(traffic.alongside),
+      occupancy: traffic.occupancy,
       target: { x: finite(target.x), y: finite(target.y), z: finite(target.z), lateral: finite(targetOffset) },
       controls, planPath: this._debugPlanPath, path: this._debugPlanPath, trajectory: this.trajectoryPlan,
       trajectoryRequestedOffsetM: finite(this.trajectoryPlan?.requestedOffset),
@@ -164,13 +205,26 @@ export class AIController {
 
     const traffic = this.awareness.scan(vehicle, vehicles, track);
     const current = traffic.current;
+    const referenceCompatible = this.referenceProfile
+      && this.referenceProfile.summary?.vehicleClass === vehicle.classKey
+      && Math.abs(finite(this.referenceProfile.trackLength) - finite(track.length)) < 2;
+    const openTrack = !traffic.entries.some((entry) => entry.direct < 55);
+    const referenceLine = referenceCompatible && openTrack
+      ? this.referenceProfile.paceAtDistance?.(vehicle.distance + 24)?.lineLateral : 0;
     const isOffTrack = offRoad(current);
     // Intervene before all four tyres leave the asphalt. Planned lanes stop at
     // this margin; crossing it by more than a metre means the car is no longer
     // tracking its trajectory, even if the coarse surface classifier still
     // labels the outer shoulder as road.
-    const plannedRoadMargin = Math.max(2.1, finite(track.roadHalfWidth, 6.5) - 1.75);
-    const edgeDeviation = Math.abs(finite(current.lateral)) > plannedRoadMargin + 1.05;
+    const conservativeMargin = Math.max(2.1, finite(track.roadHalfWidth, 6.5) - 1.75);
+    const maximumRoadMargin = referenceCompatible && openTrack
+      ? Math.max(conservativeMargin, finite(track.roadHalfWidth, 6.5) - 1.18
+        + Math.min(0.42, finite(track.curbWidth) * 0.32))
+      : conservativeMargin;
+    const currentSurfaceMargin = finite(track.planningLateralLimit?.(vehicle.distance, current.lateral),
+      finite(track.roadHalfWidth, 6.5) - 1.18);
+    const plannedRoadMargin = maximumRoadMargin;
+    const edgeDeviation = Math.abs(finite(current.lateral)) > currentSurfaceMargin + 0.55;
     if (this.lastDistance === null) this.lastDistance = vehicle.distance;
     const progress = wrap(vehicle.distance - this.lastDistance + track.length * 0.5, track.length) - track.length * 0.5;
     this.lastDistance = vehicle.distance;
@@ -190,7 +244,8 @@ export class AIController {
 
     const policy = this.tacticalPolicyAge < 0.4 ? this.tacticalPolicy : null;
     const aggression = clamp(this.aggression + finite(policy?.aggression) * 0.1, 0.55, 0.98);
-    const policyLine = finite(policy?.lineOffset) * 1.15;
+    const policyLine = finite(policy?.lineOffset) * 1.15
+      + clamp(finite(referenceLine) * 0.72, -maximumRoadMargin, maximumRoadMargin);
     const decision = this.racecraft.update({ vehicle, track, traffic, awareness: this.awareness, dt,
       aggression, policyLine, recovering, pitIntent: vehicle.pitIntent });
     this.passPhase = ['PIT', 'RECOVER'].includes(decision.phase) ? 'NONE' : decision.phase;
@@ -249,8 +304,10 @@ export class AIController {
     // reason the controller visibly drew a broad arc and ran wide at hairpins.
     const trackingDistance = clamp(lookAhead * 0.72 / (1 + localCurvature * 20), 5.5, 24);
     const physicalTargetSpeed = track.targetSpeed(vehicle.distance + lookAhead * 0.8, this.skill);
-    const referenceTarget = this.referenceProfile?.paceAtDistance?.(vehicle.distance + lookAhead * 0.8)
-      ?? this.referenceProfile?.targetAtDistance(vehicle.distance + lookAhead * 0.8) ?? null;
+    const referenceTarget = referenceCompatible
+      ? this.referenceProfile.paceAtDistance?.(vehicle.distance + lookAhead * 0.8)
+        ?? this.referenceProfile.targetAtDistance(vehicle.distance + lookAhead * 0.8)
+      : null;
     // Human telemetry supplies feed-forward intent, never direct controls.
     // The selected trajectory, tyre state and live traffic remain authoritative.
     // A larger correction is permitted only where the reference proves the
@@ -320,7 +377,7 @@ export class AIController {
         + 2 * brakingDeceleration * Math.max(0, finite(pathPoint.forwardDistance)));
       return Math.min(limit, reachableSpeed);
     }, 90);
-    if (vehicle.classKey === 'prototype' && this.referenceProfile && this.referenceTuning.trajectoryPaceFactor > 0) {
+    if (vehicle.classKey === 'prototype' && referenceCompatible && this.referenceTuning.trajectoryPaceFactor > 0) {
       desiredSpeed = Math.max(desiredSpeed, trajectorySpeedLimit * this.referenceTuning.trajectoryPaceFactor);
     }
     desiredSpeed = Math.min(desiredSpeed, trajectorySpeedLimit);
@@ -405,6 +462,9 @@ export class AIController {
     this.trafficThreat = vehicle.aiTraffic.trafficThreat;
     this.trafficTTC = vehicle.aiTraffic.ttc;
     this.predictedLateralSeparation = finite(hazard?.predictedSide, 99);
+    const ersMode = vehicle.classKey === 'prototype'
+      ? this._planERS(vehicle, track, { committed: committedPathReady, straight, throttle, referenceTarget })
+      : 'OFF';
     vehicle.aiTactical = {
       source: policy ? 'RL_HYBRID' : 'HEURISTIC_V2', lineBiasM: policyLine, paceDelta: policyPace,
       effectiveAggression: aggression, passPhase: this.passPhase, racecraftPhase: this.passPhase,
@@ -417,9 +477,10 @@ export class AIController {
       trajectoryCurvature, trajectorySpeedLimit, desiredSpeed,
       referenceSpeed: finite(referenceTarget?.speed), referenceEnvelopeSpeed: finite(referenceTarget?.envelopeSpeed),
       referenceExtraPaceSafe,
-      defenseTargetId: this.racecraft.defenseTargetId, defending: Boolean(decision.defending)
+      defenseTargetId: this.racecraft.defenseTargetId, defending: Boolean(decision.defending),
+      ersMode, ersTargetSoc: finite(this.ersPlan.targetSoc), ersActualSoc: finite(vehicle.ers?.soc)
     };
-    if (vehicle.classKey === 'prototype') vehicle.setERSMode?.(committedPathReady ? 'ATTACK' : 'AUTO');
+    if (vehicle.classKey === 'prototype') vehicle.setERSMode?.(ersMode);
 
     let mode = 'RACE'; let reason = 'OPEN_RACING_LINE';
     if (vehicle.pitIntent?.active) { mode = 'PIT'; reason = `PIT_${vehicle.pitIntent.state ?? 'ACTIVE'}`; }

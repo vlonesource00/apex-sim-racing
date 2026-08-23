@@ -65,18 +65,36 @@ const pitSystem = new PitSystem(track, vehicles, ENDURANCE_PARK);
 const passQuality = new PassQualityTracker(track);
 const referenceLapRecorder = new ReferenceLapRecorder();
 let referenceLapProfile = null;
+let referenceLapSource = 'none';
 
-function loadReferenceLap(payload) {
+function loadReferenceLap(payload, { source = 'manual' } = {}) {
   referenceLapProfile = new ReferenceLapProfile(payload);
+  referenceLapSource = source;
+  document.documentElement.dataset.referenceLapSource = source;
+  document.documentElement.dataset.referenceLapTime = String(referenceLapProfile.summary.lapTimeS);
   for (const controller of controllers.values()) controller.setReferenceProfile(referenceLapProfile);
   return referenceLapProfile.summary;
 }
 
 function clearReferenceLap() {
   referenceLapProfile = null;
+  referenceLapSource = 'none';
+  document.documentElement.dataset.referenceLapSource = 'none';
+  delete document.documentElement.dataset.referenceLapTime;
   for (const controller of controllers.values()) controller.setReferenceProfile(null);
   return true;
 }
+
+const defaultReferencePromise = fetch('/data/endurance-park-prototype-reference.json')
+  .then((response) => {
+    if (!response.ok) throw new Error(`Reference profile HTTP ${response.status}`);
+    return response.json();
+  })
+  .then((payload) => loadReferenceLap(payload, { source: 'bundled-human-64.300' }))
+  .catch((error) => {
+    console.warn('Default reference profile unavailable; physical fallback pace remains active.', error);
+    return null;
+  });
 
 function compareReferenceLap(payload) {
   if (!referenceLapProfile) throw new Error('Load a baseline reference lap first');
@@ -313,8 +331,10 @@ requestAnimationFrame(frame);
 window.__APEX73__ = {
   track, vehicles, visuals, environment, assets, metrics, race, controllers, aiDebug, cameraRig, rlShadowControllers, passQuality,
   interactions: { updateAerodynamicWakes, resolveVehicleCollisions }, pitSystem, scenario: ENDURANCE_PARK, referenceLapRecorder,
-  loadReferenceLap, clearReferenceLap, compareReferenceLap, get referenceLapProfile() { return referenceLapProfile; },
+  loadReferenceLap, clearReferenceLap, compareReferenceLap, defaultReferencePromise,
+  get referenceLapProfile() { return referenceLapProfile; }, get referenceLapSource() { return referenceLapSource; },
   get enduranceVisuals() { return enduranceVisuals; },
   startRace, selectClass, rlShadowEnabled, rlHybridEnabled, rlMode, get raceStarted() { return raceStarted; }
 };
+document.documentElement.dataset.apexReady = 'true';
 setTimeout(() => loadingScreen?.classList.add('dismissed'), 650);

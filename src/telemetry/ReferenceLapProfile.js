@@ -134,10 +134,20 @@ export class ReferenceLapProfile {
     };
   }
 
-  distanceDeltaReport(lapPayload, { binSizeM = 50 } = {}) {
+  distanceDeltaReport(lapPayload, { binSizeM = 10 } = {}) {
     const candidate = lapPayload instanceof ReferenceLapProfile ? lapPayload : new ReferenceLapProfile(lapPayload);
-    const size = clamp(finite(binSizeM, 50), 10, 250);
+    const size = clamp(finite(binSizeM, 10), 5, 250);
     const bins = [];
+    let cumulativeTimeDeltaS = 0;
+    const eventAt = (profile, centerM, sample) => {
+      const before = profile.targetAtDistance(centerM - size);
+      const after = profile.targetAtDistance(centerM + size);
+      if (finite(sample.brake) > 0.05 && finite(before.brake) <= 0.05) return 'BRAKE_ONSET';
+      if (sample.speed <= before.speed && sample.speed <= after.speed
+        && (before.speed - sample.speed > 0.35 || after.speed - sample.speed > 0.35)) return 'APEX';
+      if (finite(sample.throttle) >= 0.6 && finite(before.throttle) < 0.6) return 'THROTTLE_PICKUP';
+      return 'PACE';
+    };
     for (let startM = 0; startM < this.trackLength; startM += size) {
       const endM = Math.min(this.trackLength, startM + size);
       const centerM = (startM + endM) * 0.5;
@@ -146,9 +156,16 @@ export class ReferenceLapProfile {
       const distanceM = endM - startM;
       const referenceSpeed = Math.max(2, reference.speed);
       const candidateSpeed = Math.max(2, comparison.speed);
+      const timeDeltaS = distanceM / candidateSpeed - distanceM / referenceSpeed;
+      cumulativeTimeDeltaS += timeDeltaS;
+      const referenceStart = this.targetAtDistance(startM);
+      const referenceEnd = this.targetAtDistance(endM);
+      const candidateStart = candidate.targetAtDistance(startM);
+      const candidateEnd = candidate.targetAtDistance(endM);
       bins.push({
         startM: Number(startM.toFixed(1)), endM: Number(endM.toFixed(1)),
-        timeDeltaS: Number((distanceM / candidateSpeed - distanceM / referenceSpeed).toFixed(3)),
+        timeDeltaS: Number(timeDeltaS.toFixed(4)),
+        cumulativeTimeDeltaS: Number(cumulativeTimeDeltaS.toFixed(3)),
         speedDeltaKmh: Number(((comparison.speed - reference.speed) * 3.6).toFixed(1)),
         lineDeltaM: Number((finite(comparison.lateral) - finite(reference.lateral)).toFixed(2)),
         referenceKmh: Number((reference.speed * 3.6).toFixed(1)),
@@ -157,6 +174,22 @@ export class ReferenceLapProfile {
         aiTrajectoryLimitKmh: Number((finite(comparison.aiTrajectorySpeedLimit) * 3.6).toFixed(1)),
         aiReferenceKmh: Number((finite(comparison.aiReferenceSpeed) * 3.6).toFixed(1)),
         aiReferenceEnvelopeKmh: Number((finite(comparison.aiReferenceEnvelopeSpeed) * 3.6).toFixed(1)),
+        referenceThrottlePct: Number((finite(reference.throttle) * 100).toFixed(1)),
+        candidateThrottlePct: Number((finite(comparison.throttle) * 100).toFixed(1)),
+        referenceBrakePct: Number((finite(reference.brake) * 100).toFixed(1)),
+        candidateBrakePct: Number((finite(comparison.brake) * 100).toFixed(1)),
+        referenceTyreUtilisation: Number(finite(reference.tyreUtilisation).toFixed(3)),
+        candidateTyreUtilisation: Number(finite(comparison.tyreUtilisation).toFixed(3)),
+        referenceTyreWearPct: Number((finite(reference.tyreWear) * 100).toFixed(3)),
+        candidateTyreWearPct: Number((finite(comparison.tyreWear) * 100).toFixed(3)),
+        referenceErsSocPct: Number((finite(reference.ersSoc) * 100).toFixed(2)),
+        candidateErsSocPct: Number((finite(comparison.ersSoc) * 100).toFixed(2)),
+        referenceErsDeltaPct: Number(((finite(referenceStart.ersSoc) - finite(referenceEnd.ersSoc)) * 100).toFixed(3)),
+        candidateErsDeltaPct: Number(((finite(candidateStart.ersSoc) - finite(candidateEnd.ersSoc)) * 100).toFixed(3)),
+        referenceEvent: eventAt(this, centerM, reference),
+        candidateEvent: eventAt(candidate, centerM, comparison),
+        referenceSurface: reference.surface ?? null,
+        candidateSurface: comparison.surface ?? null,
         aiPhase: comparison.aiPhase ?? null
       });
     }

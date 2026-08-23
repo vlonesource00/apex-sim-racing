@@ -62,7 +62,31 @@ export class TrafficAwareness {
       .filter((entry) => entry.direct < 5.8 && Math.abs(entry.longitudinal) < 4.8)
       .sort((a, b) => a.direct - b.direct)[0] ?? null;
 
-    return { current, entries, ahead, behind, alongside, egoForwardSpeed };
+    const occupancy = {
+      frontLeft: [], frontCenter: [], frontRight: [],
+      sideLeft: [], sideRight: [],
+      rearLeft: [], rearCenter: [], rearRight: []
+    };
+    for (const entry of entries) {
+      const longitudinalBand = entry.longitudinal > 4.5 ? 'front'
+        : entry.longitudinal < -4.5 ? 'rear' : 'side';
+      const lateralBand = entry.side > 1.5 ? 'Right' : entry.side < -1.5 ? 'Left' : 'Center';
+      const key = longitudinalBand === 'side'
+        ? (lateralBand === 'Left' ? 'sideLeft' : lateralBand === 'Right' ? 'sideRight' : null)
+        : `${longitudinalBand}${lateralBand}`;
+      if (!key || !occupancy[key]) continue;
+      occupancy[key].push({
+        id: entry.other.id, distanceM: entry.direct, deltaM: entry.delta,
+        relativeLongitudinalVelocityMps: entry.relativeLongitudinalVelocity,
+        predicted: [0.5, 1, 2, 3].map((timeS) => ({
+          timeS,
+          longitudinalM: entry.longitudinal - entry.relativeLongitudinalVelocity * timeS,
+          lateralM: entry.side + entry.relativeLateralVelocity * timeS
+        }))
+      });
+    }
+
+    return { current, entries, ahead, behind, alongside, occupancy, egoForwardSpeed };
   }
 
   evaluateCorridor({ vehicle, track, traffic, terminalOffset, targetId = null, horizonS = 3.4, targetSpeed = vehicle.speed }) {
@@ -81,9 +105,8 @@ export class TrafficAwareness {
         + 0.5 * clamp((finite(targetSpeed) - finite(vehicle.speed)) * 0.45, -7, 4.8) * time * time);
       const lateral = startLateral + (offset - startLateral) * smooth(time / Math.max(0.75, Math.min(2.2, 0.75 + Math.abs(offset - startLateral) * 0.2)));
       const point = track.atDistance(vehicle.distance + forwardDistance);
-      const placed = track.lateralPoint(point, lateral);
-      const surface = track.surfaceAt(placed.x, placed.z);
-      if (surface?.zone === 'grass' || surface?.zone === 'runoff') legal = false;
+      const surfaceLimit = finite(track.planningLateralLimit?.(point.s, lateral), roadMargin);
+      if (Math.abs(lateral) > Math.min(roadMargin, surfaceLimit)) legal = false;
 
       for (const entry of traffic.entries) {
         const opponentProgress = Math.max(0, finite(entry.other.speed) * time);

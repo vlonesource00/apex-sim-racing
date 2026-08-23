@@ -19,4 +19,10 @@ const comparison = baseline.compare(makeLap(84, 0.95));
 assert.equal(comparison.lapDeltaS, 4);
 assert.ok(comparison.pacePct > 95 && comparison.pacePct < 96);
 assert.ok(comparison.meanSpeedDeltaKmh < 0);
+const detailed = baseline.distanceDeltaReport(makeLap(84, 0.95), { binSizeM: 10 });
+assert.equal(detailed.binSizeM, 10);
+assert.ok(detailed.bins.length >= 100);
+assert.ok(detailed.bins.every((bin) => Number.isFinite(bin.cumulativeTimeDeltaS)
+  && Number.isFinite(bin.referenceThrottlePct) && Number.isFinite(bin.candidateBrakePct)
+  && Number.isFinite(bin.referenceTyreUtilisation) && Number.isFinite(bin.candidateErsSocPct)));
 console.log(JSON.stringify({ summary: baseline.summary, comparison }, null, 2));

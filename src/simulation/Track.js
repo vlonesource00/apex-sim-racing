@@ -165,6 +165,23 @@ export class Circuit {
     };
   }
 
+  /**
+   * Maximum legal centre position for an AI car footprint. Standard kerbs
+   * are usable where the authored corner marks them; runoff and grass never
+   * are. This keeps geometry and tactics on one surface contract instead of
+   * a fixed, unnecessarily narrow corridor.
+   */
+  planningLateralLimit(distance, side = 0, { halfWidthM = 1.02, safetyM = 0.16 } = {}) {
+    const point = this.atDistance(distance);
+    const roadLimit = Math.max(1.8, this.roadHalfWidth - halfWidthM - safetyM);
+    const signedSide = Math.sign(finiteNumber(side));
+    const onAuthoredKerbSide = signedSide !== 0 && signedSide === Math.sign(finiteNumber(point.curbSide));
+    const usableKerb = onAuthoredKerbSide
+      ? Math.min(0.42, this.curbWidth * 0.32)
+      : point.turnStrength < 0.12 ? Math.min(0.12, this.curbWidth * 0.1) : 0;
+    return roadLimit + usableKerb;
+  }
+
   closest(x, z) {
     let best = null;
     const points = this.samples;

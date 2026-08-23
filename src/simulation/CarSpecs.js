@@ -89,7 +89,7 @@ export const CAR_SPECS = freeze({
       })
     }),
     lsd: freeze({ preloadNm: 112, driveRampDeg: 42, coastRampDeg: 58 }),
-    tire: freeze({ ...common.tire, mu: 1.7, preheatC: 62, idealTempC: 88, wearRate: 1.1e-7 }),
+    tire: freeze({ ...common.tire, mu: 1.7, preheatC: 62, idealTempC: 88, wearRate: 1.75e-7 }),
     handling: freeze({
       ...common.handling,
       axleGrip: freeze({ front: 0.985, rear: 1.055 }),
@@ -128,7 +128,7 @@ export const CAR_SPECS = freeze({
       })
     }),
     lsd: freeze({ preloadNm: 146, driveRampDeg: 36, coastRampDeg: 53 }),
-    tire: freeze({ ...common.tire, mu: 1.92, idealTempC: 94, preheatC: 70, wearRate: 1.1e-7, relaxationLengthX: 0.32, relaxationLengthY: 0.42 }),
+    tire: freeze({ ...common.tire, mu: 1.92, idealTempC: 94, preheatC: 70, wearRate: 1.28e-7, relaxationLengthX: 0.32, relaxationLengthY: 0.42 }),
     handling: freeze({
       ...common.handling,
       axleGrip: freeze({ front: 1.055, rear: 1.07 }),
@@ -199,7 +199,7 @@ export const CAR_SPECS = freeze({
       })
     }),
     lsd: freeze({ preloadNm: 132, driveRampDeg: 31, coastRampDeg: 65 }),
-    tire: freeze({ ...common.tire, mu: 1.38, idealTempC: 82, preheatC: 58, wearRate: 1.15e-7, loadSensitivity: 0.19 }),
+    tire: freeze({ ...common.tire, mu: 1.38, idealTempC: 82, preheatC: 58, wearRate: 1.65e-7, loadSensitivity: 0.19 }),
     handling: freeze({
       ...common.handling,
       axleGrip: freeze({ front: 1.015, rear: 1.06 }),

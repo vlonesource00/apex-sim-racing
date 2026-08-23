@@ -163,9 +163,17 @@ export class RacecraftPlanner {
       { side: turnSign, phase: 'ATTACK_INSIDE', corridor: inside },
       { side: -turnSign, phase: Math.abs(finite(turn?.curvature)) > 0.0045 ? 'SWITCHBACK' : 'ATTACK_OUTSIDE', corridor: outside }
     ];
+    // Every manoeuvre is evaluated over the same predictive occupancy field.
+    // Clearance is the primary score; exit opportunity breaks ties without
+    // allowing a theoretical time gain to override a blocked body corridor.
     const candidates = evaluatedCandidates
       .filter((candidate) => candidate.corridor.collisionFree && candidate.corridor.targetSeparationM >= 3.55)
-      .sort((a, b) => b.corridor.minimumClearanceM - a.corridor.minimumClearanceM);
+      .map((candidate) => {
+        const exitBonus = candidate.phase === 'SWITCHBACK' && target.otherTargetLateral * turnSign > 0 ? 0.12 : 0;
+        return { ...candidate, score: candidate.corridor.minimumClearanceM + exitBonus };
+      })
+      .sort((a, b) => b.score - a.score
+        || b.corridor.minimumClearanceM - a.corridor.minimumClearanceM);
 
     const attackRange = target.other.speed < vehicle.speed * 0.72 ? 38 : 28;
     // A clear lane is itself the permission to attack. Requiring an existing

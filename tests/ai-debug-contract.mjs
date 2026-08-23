@@ -53,6 +53,16 @@ assert.ok(Math.hypot(
   state.planPath[0].z - on.ai.position.z
 ) < 0.35, 'debug point zero must equal the vehicle position');
 assert.ok(state.planPath.at(-1).time >= 3, 'debug plan horizon must reach at least three seconds');
+assert.deepEqual(Object.keys(state.occupancy), [
+  'frontLeft', 'frontCenter', 'frontRight', 'sideLeft',
+  'sideRight', 'rearLeft', 'rearCenter', 'rearRight'
+], 'debug awareness must expose the complete eight-zone occupancy map');
+const occupied = Object.values(state.occupancy).flat();
+assert.ok(occupied.length >= 1, 'occupancy map must include nearby traffic');
+assert.ok(occupied.every((entry) => entry.predicted.length === 4
+  && entry.predicted.map((point) => point.timeS).join(',') === '0.5,1,2,3'),
+  'each occupied zone must expose 0.5/1/2/3 second predictions');
+assert.ok(Number.isFinite(on.ai.aiTactical.ersTargetSoc), 'prototype AI must publish its predictive ERS target');
 for (let i = 1; i < state.planPath.length; i += 1) {
   assert.ok(state.planPath[i].time > state.planPath[i - 1].time, 'debug plan time must increase');
   assert.ok(Number.isFinite(state.planPath[i].predictedSpeed), 'debug predicted speed must be finite');

@@ -34,6 +34,7 @@
     "test:reference-profile": "node ./tests/reference-lap-profile.mjs",
     "test:ai-reference": "node ./tests/ai-reference-benchmark.mjs",
     "test:human-reference": "node ./tests/human-reference-pace.mjs",
+    "test:default-reference": "node ./tests/default-reference-profile.mjs",
     "lap:report": "node ./tools/reference-lap-report.mjs",
     "ai:reference": "node ./tools/ai-reference-report.mjs",
     "test:ai-slow-player": "node ./tests/ai-slow-player-bypass.mjs",
