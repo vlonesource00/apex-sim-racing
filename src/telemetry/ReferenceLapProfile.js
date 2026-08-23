@@ -13,11 +13,12 @@ export class ReferenceLapProfile {
     if (!Array.isArray(payload.samples) || payload.samples.length < 10) throw new Error('Reference lap has too few samples');
     this.payload = payload;
     this.trackLength = Math.max(1, finite(payload.trackLengthM));
-    this.samples = payload.samples.map((sample) => ({
+    this.timeSamples = payload.samples.map((sample) => ({
       ...sample,
       s: ((finite(sample.s) % this.trackLength) + this.trackLength) % this.trackLength,
       t: finite(sample.t), speed: Math.max(0, finite(sample.speed))
-    })).sort((a, b) => a.s - b.s);
+    }));
+    this.samples = [...this.timeSamples].sort((a, b) => a.s - b.s);
     this.paceGridStepM = 5;
     this.paceGrid = this._buildPaceGrid();
     this.summary = this._summary();
@@ -78,9 +79,9 @@ export class ReferenceLapProfile {
       fullThrottlePct: Number((100 * this.samples.filter((sample) => finite(sample.throttle) >= 0.98).length / this.samples.length).toFixed(1)),
       brakingPct: Number((100 * this.samples.filter((sample) => finite(sample.brake) > 0.05).length / this.samples.length).toFixed(1)),
       meanTyreUtilisation: Number(mean('tyreUtilisation').toFixed(3)),
-      ersStartPct: Number((finite(this.samples[0]?.ersSoc) * 100).toFixed(1)),
-      ersEndPct: Number((finite(this.samples.at(-1)?.ersSoc) * 100).toFixed(1)),
-      ersUsedPct: Number(((finite(this.samples[0]?.ersSoc) - finite(this.samples.at(-1)?.ersSoc)) * 100).toFixed(1))
+      ersStartPct: Number((finite(this.timeSamples[0]?.ersSoc) * 100).toFixed(1)),
+      ersEndPct: Number((finite(this.timeSamples.at(-1)?.ersSoc) * 100).toFixed(1)),
+      ersUsedPct: Number(((finite(this.timeSamples[0]?.ersSoc) - finite(this.timeSamples.at(-1)?.ersSoc)) * 100).toFixed(1))
     };
   }
 
@@ -109,7 +110,8 @@ export class ReferenceLapProfile {
     const lower = this.paceGrid[lowerIndex];
     const upper = this.paceGrid[upperIndex];
     const result = {};
-    for (const key of ['speed', 'envelopeSpeed', 'throttle', 'brake', 'tyreUtilisation', 'bodySlip', 'lateral', 'lineLateral']) {
+    for (const key of ['speed', 'envelopeSpeed', 'throttle', 'brake',
+      'tyreUtilisation', 'bodySlip', 'lateral', 'lineLateral']) {
       result[key] = finite(lower[key]) + (finite(upper[key]) - finite(lower[key])) * blend;
     }
     return { ...result, s, sampleCount: this.samples.length, radiusM: clamp(finite(radiusM, 12), 3, 40) };

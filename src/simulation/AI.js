@@ -48,11 +48,20 @@ export class AIController {
     this.trafficTTC = 99;
     this.predictedLateralSeparation = 99;
     this.referenceProfile = null;
+    this.referenceTuning = { paceCapMps: 16, trajectoryPaceFactor: 0.93 };
   }
 
   setReferenceProfile(profile = null) {
     this.referenceProfile = profile && typeof profile.targetAtDistance === 'function' ? profile : null;
     return Boolean(this.referenceProfile);
+  }
+
+  setReferenceTuning(tuning = {}) {
+    this.referenceTuning = {
+      paceCapMps: clamp(finite(tuning.paceCapMps, this.referenceTuning.paceCapMps), 0, 30),
+      trajectoryPaceFactor: clamp(finite(tuning.trajectoryPaceFactor,
+        this.referenceTuning.trajectoryPaceFactor), 0, 1)
+    };
   }
 
   setDebugEnabled(enabled) {
@@ -249,8 +258,16 @@ export class AIController {
     // This fixes false centre-line curvature limits without teaching the AI to
     // blindly copy a human speed through a differently chosen line.
     const liveSlip = Math.atan2(finite(vehicle.localVelocity?.x), Math.max(3, Math.abs(finite(vehicle.localVelocity?.z, vehicle.speed))));
+    const referenceExtraPaceSafe = Boolean(referenceTarget && (
+      (finite(referenceTarget.speed) > 52 && finite(referenceTarget.brake) < 0.03
+        && finite(referenceTarget.tyreUtilisation) < 0.5)
+      || (this.upcomingCurvature < 0.0028 && finite(referenceTarget.throttle) > 0.94
+        && finite(referenceTarget.brake) < 0.02)
+    ));
+    const referencePaceCap = referenceExtraPaceSafe
+      ? this.referenceTuning.paceCapMps : Math.min(6, this.referenceTuning.paceCapMps);
     const referencePaceDelta = referenceTarget
-      ? clamp(finite(referenceTarget.speed) * 0.985 - physicalTargetSpeed, 0, 6)
+      ? clamp(finite(referenceTarget.speed) * 0.985 - physicalTargetSpeed, 0, referencePaceCap)
       : 0;
     const baseTargetSpeed = physicalTargetSpeed + referencePaceDelta;
     this.trajectoryPlan = this.trajectoryPlanner.plan({
@@ -303,6 +320,9 @@ export class AIController {
         + 2 * brakingDeceleration * Math.max(0, finite(pathPoint.forwardDistance)));
       return Math.min(limit, reachableSpeed);
     }, 90);
+    if (vehicle.classKey === 'prototype' && this.referenceProfile && this.referenceTuning.trajectoryPaceFactor > 0) {
+      desiredSpeed = Math.max(desiredSpeed, trajectorySpeedLimit * this.referenceTuning.trajectoryPaceFactor);
+    }
     desiredSpeed = Math.min(desiredSpeed, trajectorySpeedLimit);
     const targetEntry = decision.target;
     const selectedSeparation = targetEntry ? Math.abs(finite(this.trajectoryPlan.selectedOffset) - finite(targetEntry.otherLateral)) : 99;
@@ -396,6 +416,7 @@ export class AIController {
       outsideLaneClear: this.outsideLaneClear, safetyIntervention: finite(policy?.safetyIntervention),
       trajectoryCurvature, trajectorySpeedLimit, desiredSpeed,
       referenceSpeed: finite(referenceTarget?.speed), referenceEnvelopeSpeed: finite(referenceTarget?.envelopeSpeed),
+      referenceExtraPaceSafe,
       defenseTargetId: this.racecraft.defenseTargetId, defending: Boolean(decision.defending)
     };
     if (vehicle.classKey === 'prototype') vehicle.setERSMode?.(committedPathReady ? 'ATTACK' : 'AUTO');

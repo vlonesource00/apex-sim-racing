@@ -20,9 +20,9 @@
       {
         "system":"APEX//73 — Endurance Park mixed-class racing simulator",
         "task":"Use the player's 64.300 s Prototype lap as a distance-indexed reference to improve physical AI pace and racecraft without changing player physics or granting hidden forces.",
-        "status":"The preserved baseline is on main and work continues on codex/human-reference-racecraft. A same-physics 120 Hz headless flying-lap benchmark, 20 Hz telemetry recorder, smoothed pace profile and distance-delta report are live. Reference-informed AI currently runs 75.85 s cleanly versus 77.45 s without guidance.",
-        "criticVerdict":"Phase-one reference guidance gains 1.60 s with zero off-track time, and the planner no longer requires pre-existing closing velocity before using a verified clear pass lane. In mixed traffic this removed a Prototype's 135 s drafting stalemate, but light switchback contact and excessive braking remain unacceptable polish gaps.",
-        "biggestGap":"The default centreline curvature target ignores class-specific downforce and the AI racing line still cannot exploit the player's high-speed geometry. The AI brakes 11.9% of the lap versus the player's 6.4%, averages 145.9 versus 169.6 km/h, and remains 11.55 s behind; the next foundation is a stable optimized line plus class-aware predictive speed envelope.",
+        "status":"The preserved baseline is on main and work continues on codex/human-reference-racecraft. Equivalent-state 120 Hz headless comparison now matches the measured lap's finite SOC, tyre temperature and wear. The physically driven Prototype completes a clean 66.00 s lap versus the player's 64.300 s reference.",
+        "criticVerdict":"The 67.515 s goal is beaten by 1.515 s with zero off-track time and no hidden forces. The decisive fix was using 93% of the selected trajectory's tyre/downforce-derived reachable-speed ceiling instead of allowing the generic 1.08-g centreline target to dominate Prototype pace.",
+        "biggestGap":"Solo pace is within 2.64% of the human reference, but the AI still brakes 11.9% versus 6.4% and reaches only 215.5 versus 231.4 km/h. Mixed-field switchback contact and more sophisticated multi-corner tactics remain the largest experience-level gaps.",
         "completed":[
           "GT / prototype / touring frozen SI-unit presets: mass, inertia, drivetrain, brakes, suspension, aero, differential and tyre targets",
           "Stateful Pacejka-inspired combined-slip tyres with relaxation, load sensitivity, camber thrust, thermal zones, pressure and wear",
@@ -63,7 +63,7 @@
           "Physics and steering suites verify finite 120 Hz stress, curvature cap, force-generated yaw, Ackermann signs, tire behavior, restrained roll, thermal pressure, 3D track, electronics bounds and class differentiation"
         ],
         "weak":[
-          "Reference-informed Prototype is 75.85 s versus the 64.300 s human target; high-speed racing-line geometry and class-aware speed planning remain the dominant deficit",
+          "Reference-informed solo pace meets the target, but high-speed top speed and braking efficiency still trail the human lap",
           "Mixed-field stress still records 23 light contact frames in one switchback despite zero deep overlaps; target-corridor collapse needs a less oscillatory resolution than immediate abort/retry",
           "Extended human-driven full-stint feel, device-specific audio mix and narrow mobile layout remain only partially verified",
           "No weather, replay, animated crowds, driver animation, aggressive LOD switching or WebHID/WebUSB force feedback",
@@ -98,10 +98,10 @@
           ["Venue density","613 planned props · 17 instanced batches · <=35 meshes"],
           ["Validated prop roots","15"],
           ["Endurance AI race","8 / 8 finishers · 0 deep overlaps · 0 stalls"],
-          ["Prototype flying lap","77.45 s baseline · 75.85 s reference-informed · 0 off-track"],
+          ["Prototype flying lap","77.45 s baseline · 66.00 s reference-informed · 0 off-track"],
           ["Human reference","64.300 s · 169.6 km/h mean · 231.4 km/h max"],
-          ["Reference pace gap","+11.55 s · AI braking 11.9% vs human 6.4%"],
-          ["Reference ERS use","AI 28.9% SOC · human 38.4% SOC per lap"],
+          ["Reference pace gap","+1.70 s / 2.64% · target ≤67.515 s passed"],
+          ["Equivalent start state","SOC 50.98% · tyre 101.53 °C · wear 3.829%"],
           ["Class benchmark","Prototype 79.6 s · GT 90.7 s · touring 100.8 s"],
           ["One-lap tyre degradation","8.2% prototype · 9.1% GT · 9.4% touring"],
           ["AI debug determinism","Debug on/off state equal · 24-point / 3.2 s finite paths"],
