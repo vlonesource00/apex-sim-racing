@@ -19,10 +19,10 @@
     <script id="progress-data" type="application/json">
       {
         "system":"APEX//73 — Endurance Park mixed-class racing simulator",
-        "task":"Finish the remaining deterministic simulator improvements while explicitly deferring all RL/JAX retraining until the player authorizes it.",
-        "status":"The validated 64.300 s Prototype reference is now a bundled normal-race asset. The physically driven AI completes a clean 65.95 s equivalent-state lap, uses a predictive ERS budget, understands legal partial-kerb footprint, exposes predictive lateral occupancy, and passes every repository contract.",
-        "criticVerdict":"All 33 contracts pass. The eight-car field has 8/8 finishers, zero stalls, deadlocks or deep overlaps; mixed racecraft has zero contact frames; all classes now produce strategic 8–10.5% one-lap degradation; ERS consumption is 37.6% AI versus 38.4% human.",
-        "biggestGap":"The deterministic foundation is complete for this phase. The remaining measurable solo gap is braking efficiency and terminal speed: 12.9% braking and 217.6 km/h AI versus 6.4% and 231.4 km/h human. RL retraining remains intentionally deferred.",
+        "task":"Retrain and independently audit the multi-agent RL racecraft layer on the RTX 5060 Ti without weakening the accepted deterministic controller.",
+        "status":"Stage 4 training is complete on 4,096 simultaneous cars in CUDA VRAM. The active browser policy intentionally remains Stage 3 because every Stage 4 candidate failed at least one clean-racing promotion gate; the best rejected checkpoint is retained for reproducible comparison, not silently shipped.",
+        "criticVerdict":"The final 50.33M-transition minimal-drift candidate improved learned clean passes to 50.84/100 and reduced deep contacts to 12.00/100, but forced-offs rose to 0.650/100 and deployed-hybrid clean passes fell to 36.30/100. Stage 3 remains the safer overall production choice.",
+        "biggestGap":"The JAX pack environment still has a sim-to-deployment authority mismatch: its hybrid evaluator replaces lane intent outright, while the browser blends RL intent through deterministic swept-path planning. Training needs that exact planner/controller interface before a Stage 4 policy should be promoted.",
         "completed":[
           "GT / prototype / touring frozen SI-unit presets: mass, inertia, drivetrain, brakes, suspension, aero, differential and tyre targets",
           "Stateful Pacejka-inspired combined-slip tyres with relaxation, load sensitivity, camber thrust, thermal zones, pressure and wear",
@@ -41,6 +41,7 @@
           "Opt-in RL shadow mode at ?rl=shadow: 19-value observations and 20 Hz tactical decisions are logged while the production heuristic retains exclusive control",
           "Opt-in live RL hybrid at ?rl=hybrid: learned pace/aggression/ERS strategy feeds the race controller at exactly 20 Hz behind deterministic lane safety and low-level control",
           "Active Stage 3 pack policy: 1,024 four-car self-play environments, 43-value three-slot traffic observation, boxed-in detection and hybrid deterministic lane authority",
+          "GPU Stage 4 laboratory: warm-start support, optional completed-reference target profile, truthful learned-line audit, native-browser audit, and the best rejected candidate retained behind the active Stage 3 policy",
           "Reactive racecraft: closing-rate overtakes, side-lane availability, committed passes, corner switchback/cutback attempts, post-pass return and pressure-dependent aggression",
           "Stateful racing lines replace lap-distance scripting: tyre wear, local grip, elapsed race state, learned action and traffic continuously reshape intent",
           "Human-reference pipeline: armed flying-lap capture, same-schema headless AI capture, smoothed distance profile, ERS accounting and enriched 10 m loss attribution",
@@ -68,7 +69,8 @@
         ],
         "weak":[
           "Reference-informed solo pace meets the target, but high-speed top speed and braking efficiency still trail the human lap",
-          "Current deterministic racecraft is clean in the automated fields, but multi-corner opponent memory and learned human variability await the explicitly deferred RL phase",
+          "Stage 4 did not earn promotion: the best candidate reduced some contact measures but increased forced-offs or reduced deployed clean passing",
+          "The reduced JAX pack shield and the browser's full trajectory planner do not yet share one exact deployable control interface",
           "Extended human-driven full-stint feel, device-specific audio mix and narrow mobile layout remain only partially verified",
           "No weather, replay, animated crowds, driver animation, aggressive LOD switching or WebHID/WebUSB force feedback",
           "Tire, powertrain and ERS values are calibrated browser approximations, not proprietary simulator or homologation data"
@@ -85,6 +87,8 @@
           ["Live RL scheduler","20 Hz exact · 360 decisions / 18 s"],
           ["Stage 3 GPU training","4,096 parallel cars · 167.77M transitions · 2.39M transitions/s"],
           ["Stage 3 pack audit","32.32 clean passes/100 · 7.51 deep contacts · 0.347 forced-offs"],
+          ["Stage 4 CUDA retraining","4,096 cars · 50.33M–167.77M transitions/run · up to 2.28M transitions/s · 15,540 MiB VRAM observed"],
+          ["Stage 4 long audit","50.84 learned clean passes/100 · 12.00 deep contacts · 0.650 forced-offs · rejected"],
           ["Racecraft stress field","6 / 6 finish · 5 passers · 3 switchback cars"],
           ["Clean-straight commitment","93.1% field-average full throttle"],
           ["Settled coast/lift/power handling","GT 1.4° · prototype 0.4° · touring 3.8° max body slip probe"],

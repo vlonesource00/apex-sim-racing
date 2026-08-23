@@ -8,6 +8,7 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 
+from evaluate_policy import load_actor
 from jax_pack import PACK_CARS, PACK_OBSERVATION_SIZE, load_track, observe_pack, pack_env_step, reset_done, reset_pack_batch
 from train_ppo import adam_init, adam_step, calculate_gae, export_policy, gaussian_log_probability, init_parameters, policy_value, ppo_loss
 
@@ -41,11 +42,22 @@ def main():
     parser.add_argument("--updates", type=int, default=256)
     parser.add_argument("--epochs", type=int, default=4)
     parser.add_argument("--seed", type=int, default=307)
-    parser.add_argument("--output", type=Path, default=Path(__file__).parent / "policies" / "stage3_pack_policy.json")
+    parser.add_argument("--learning-rate", type=float, default=3e-4)
+    parser.add_argument("--log-std", type=float, default=-1.25)
+    parser.add_argument("--init-policy", type=Path,
+                        help="Warm-start the actor from an existing browser policy; the critic is retrained.")
+    parser.add_argument("--reference", type=Path,
+                        help="Use a completed human reference lap as the target-speed profile.")
+    parser.add_argument("--output", type=Path, default=Path(__file__).parent / "policies" / "stage4_reference_pack_policy.json")
     args = parser.parse_args()
-    track = load_track()
+    track = load_track(reference_path=args.reference)
     parameter_key, reset_key, rollout_key = jax.random.split(jax.random.PRNGKey(args.seed), 3)
     parameters = init_parameters(parameter_key, PACK_OBSERVATION_SIZE)
+    if args.init_policy is not None:
+        actor, payload = load_actor(args.init_policy)
+        if payload.get("observationSize") != PACK_OBSERVATION_SIZE:
+            raise ValueError(f"Expected {PACK_OBSERVATION_SIZE} observations in {args.init_policy}")
+        parameters = {**parameters, "actor": actor, "log_std": jnp.full((4,), args.log_std)}
     optimizer = adam_init(parameters)
     state = reset_pack_batch(reset_key, args.envs, track)
     collect = jax.jit(lambda params, current, rng: collect_rollout(params, current, rng, track, args.horizon))
@@ -53,7 +65,8 @@ def main():
     @jax.jit
     def optimize(params, optimizer_state, batch):
         (loss, details), gradients = jax.value_and_grad(ppo_loss, has_aux=True)(params, batch)
-        params, optimizer_state, gradient_norm = adam_step(params, optimizer_state, gradients)
+        params, optimizer_state, gradient_norm = adam_step(
+            params, optimizer_state, gradients, learning_rate=args.learning_rate)
         return params, optimizer_state, loss, details, gradient_norm
 
     started = time.perf_counter()
@@ -83,11 +96,18 @@ def main():
     jax.block_until_ready(parameters)
     elapsed = time.perf_counter() - started
     agent_steps = args.envs * PACK_CARS * args.horizon * args.updates
-    metadata = {"stage": "stage3-parameter-shared-pack-self-play", "seed": args.seed,
+    stage = ("stage4-human-reference-pack-finetune" if args.init_policy and args.reference
+             else "stage4-browser-aligned-pack-finetune" if args.init_policy
+             else "stage3-parameter-shared-pack-self-play")
+    metadata = {"stage": stage,
+                "seed": args.seed,
                 "environmentCount": args.envs, "carsPerEnvironment": PACK_CARS,
                 "parallelCars": args.envs * PACK_CARS, "horizon": args.horizon,
                 "updates": args.updates, "agentTransitions": agent_steps,
                 "agentTransitionsPerSecond": round(agent_steps / max(elapsed, 1e-6)),
+                "learningRate": args.learning_rate, "explorationLogStd": args.log_std,
+                "initialPolicy": str(args.init_policy) if args.init_policy else None,
+                "referenceLap": str(args.reference) if args.reference else None,
                 "trafficSlots": ["nearest-ahead", "nearest-side", "nearest-behind"],
                 "cleanPassRule": "shared-policy crossover plus 5m clearance held for 1s without contact",
                 "finalTrainingMetrics": history[-1] if history else {}}

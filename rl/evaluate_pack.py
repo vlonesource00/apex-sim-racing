@@ -29,7 +29,7 @@ def heuristic_actions(state):
     return jnp.stack((line, jnp.full_like(line, 0.18), jnp.full_like(line, 0.18), jnp.full_like(line, 0.55)), axis=-1)
 
 
-def evaluate(initial_state, track, steps: int, actor=None):
+def evaluate(initial_state, track, steps: int, actor=None, hybrid_line=False):
     environment_count = initial_state.cars.shape[0]
 
     def scan_step(carry, _):
@@ -37,10 +37,11 @@ def evaluate(initial_state, track, steps: int, actor=None):
         key, reset_key = jax.random.split(key)
         if actor is not None:
             action = apply_actor(actor, observe_pack(state, track))
-            # Hybrid authority: the learned layer chooses pace/aggression/ERS;
-            # deterministic geometry retains final ownership of the lane target.
-            geometric_line = heuristic_actions(state)[..., 0]
-            action = action.at[..., 0].set(geometric_line)
+            if hybrid_line:
+                # Mirrors the deployed split of authority: learned tactics with
+                # deterministic geometry retaining final lane ownership.
+                geometric_line = heuristic_actions(state)[..., 0]
+                action = action.at[..., 0].set(geometric_line)
         else:
             action = heuristic_actions(state)
         result = pack_env_step(state, action, track)
@@ -64,25 +65,33 @@ def main():
     parser.add_argument("policy", type=Path)
     parser.add_argument("--envs", type=int, default=2048)
     parser.add_argument("--steps", type=int, default=900)
+    parser.add_argument("--reference", type=Path)
+    parser.add_argument("--report-only", action="store_true",
+                        help="Print failed promotion gates without returning a failing process status.")
     args = parser.parse_args()
-    track = load_track()
+    track = load_track(reference_path=args.reference)
     initial = reset_pack_batch(jax.random.PRNGKey(881), args.envs, track)
     actor, payload = load_actor(args.policy)
-    learned, heuristic = jax.jit(lambda state: (evaluate(state, track, args.steps, actor),
-                                                 evaluate(state, track, args.steps)))(initial)
+    learned, deployed, heuristic = jax.jit(lambda state: (
+        evaluate(state, track, args.steps, actor),
+        evaluate(state, track, args.steps, actor, hybrid_line=True),
+        evaluate(state, track, args.steps)))(initial)
     jax.block_until_ready(learned)
     convert = lambda values: {key: float(value) for key, value in values.items()}
     result = {"device": str(jax.devices()[0]), "policy": str(args.policy),
               "training": payload.get("metadata", {}), "learned": convert(learned),
+              "deployedHybrid": convert(deployed),
               "heuristic": convert(heuristic)}
+    candidate = result["deployedHybrid"]
     result["acceptance"] = {
-        "moreCleanPassing": result["learned"]["cleanPassesPer100Episodes"] >= result["heuristic"]["cleanPassesPer100Episodes"] * 1.1,
-        "lessDeepContact": result["learned"]["deepContactsPer100Episodes"] <= result["heuristic"]["deepContactsPer100Episodes"],
-        "noRaceRuining": result["learned"]["forcedOffsPer100Episodes"] <= 0.5,
-        "stablePack": result["learned"]["offsPer100Episodes"] <= result["heuristic"]["offsPer100Episodes"],
+        "moreCleanPassing": candidate["cleanPassesPer100Episodes"] >= result["heuristic"]["cleanPassesPer100Episodes"] * 1.1,
+        "lessDeepContact": candidate["deepContactsPer100Episodes"] <= result["heuristic"]["deepContactsPer100Episodes"],
+        "noRaceRuining": candidate["forcedOffsPer100Episodes"] <= 0.5,
+        "stablePack": candidate["offsPer100Episodes"] <= result["heuristic"]["offsPer100Episodes"],
+        "learnedLineContained": result["learned"]["forcedOffsPer100Episodes"] <= 1.0,
     }
     print(json.dumps(result, indent=2))
-    if not all(result["acceptance"].values()):
+    if not args.report_only and not all(result["acceptance"].values()):
         raise SystemExit(1)
 
 

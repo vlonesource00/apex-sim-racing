@@ -54,6 +54,7 @@
     "rl:gpu:multi-evaluate": "powershell -ExecutionPolicy Bypass -File ./tools/run-jax-gpu.ps1 multi-evaluate",
     "rl:gpu:pack-train": "wsl.exe -d Ubuntu -- bash -lc \"cd '/mnt/c/Users/Martim Costa/Desktop/nigger/gpt racing' && /opt/apex73-jax/bin/python rl/train_pack_ppo.py\"",
     "rl:gpu:pack-evaluate": "wsl.exe -d Ubuntu -- bash -lc \"cd '/mnt/c/Users/Martim Costa/Desktop/nigger/gpt racing' && /opt/apex73-jax/bin/python rl/evaluate_pack.py rl/policies/stage3_pack_policy.json\"",
+    "rl:gpu:stage4-evaluate": "wsl.exe -d Ubuntu -- bash -lc \"cd '/mnt/c/Users/Martim Costa/Desktop/nigger/gpt racing' && /opt/apex73-jax/bin/python rl/evaluate_pack.py rl/policies/stage4_rejected_candidate_policy.json --envs 4096 --steps 2000 --report-only\"",
     "assets:build": "node ./tools/blender/run-assets.mjs",
     "assets:build:gt": "node ./tools/blender/run-assets.mjs --gt-only",
     "assets:check": "node ./tests/asset-pipeline.mjs"

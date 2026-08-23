@@ -215,10 +215,10 @@ def pack_env_step(state: PackState, action: jax.Array, track: dict[str, jax.Arra
     # A position is only valuable if it survives the one-second clean-pass
     # audit.  Contact and displacement therefore dominate the dense progress
     # signal instead of becoming an exploitable shortcut to the pass bonus.
-    reward = (result.reward + relative_gain * 1.25 + clean_count * 24.0
+    reward = (result.reward + relative_gain * 1.5 + clean_count * 40.0
               + jnp.sum(holding_clear.astype(cars.dtype), axis=-1) * 0.18
               - contact_count * 28.0 - jnp.sum(deep_contact.astype(cars.dtype), axis=-1) * 64.0
-              - forced_count * 128.0 - off.astype(cars.dtype) * 80.0
+              - forced_count * 192.0 - off.astype(cars.dtype) * 80.0
               - margin_cost * 2.8 - edge_excess ** 2 * 1.6 - stability_excess ** 2 * 18.0)
     done = jnp.any(off, axis=-1) | jnp.any(deep_contact, axis=(1, 2)) | ~jnp.all(jnp.isfinite(reward), axis=-1)
     metrics = jnp.stack((jnp.sum(clean_pass.astype(cars.dtype), axis=(1, 2)),

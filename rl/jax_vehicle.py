@@ -6,6 +6,7 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = json.loads((Path(__file__).parent / "model_config.json").read_text(encoding="utf-8"))
@@ -18,13 +19,35 @@ class StepResult(NamedTuple):
     done: jax.Array
 
 
-def load_track(path: Path | None = None) -> dict[str, jax.Array | float]:
+def load_track(path: Path | None = None, reference_path: Path | None = None) -> dict[str, jax.Array | float]:
     payload = json.loads((path or Path(__file__).parent / "track_profile.json").read_text(encoding="utf-8"))
     samples = payload["samples"]
+    target_speed = np.asarray([sample["targetSpeedMps"] for sample in samples], dtype=np.float32)
+    if reference_path is not None:
+        reference = json.loads(reference_path.read_text(encoding="utf-8"))
+        if not reference.get("complete", False):
+            raise ValueError(f"Reference lap is incomplete: {reference_path}")
+        reference_samples = reference.get("samples", [])
+        if len(reference_samples) < 32:
+            raise ValueError(f"Reference lap has too few samples: {reference_path}")
+        reference_s = np.asarray([sample["s"] for sample in reference_samples], dtype=np.float64)
+        reference_speed = np.asarray([sample["speed"] for sample in reference_samples], dtype=np.float64)
+        order = np.argsort(reference_s)
+        reference_s = reference_s[order]
+        reference_speed = reference_speed[order]
+        unique_s, unique_index = np.unique(reference_s, return_index=True)
+        reference_speed = reference_speed[unique_index]
+        track_s = np.asarray([sample.get("s", index / len(samples) * payload["lengthM"])
+                              for index, sample in enumerate(samples)], dtype=np.float64)
+        target_speed = np.interp(track_s, unique_s, reference_speed, period=float(payload["lengthM"])).astype(np.float32)
+        # Remove one-frame recording noise without erasing real braking zones.
+        radius = 3
+        padded = np.concatenate((target_speed[-radius:], target_speed, target_speed[:radius]))
+        target_speed = np.convolve(padded, np.ones(radius * 2 + 1) / (radius * 2 + 1), mode="valid").astype(np.float32)
     return {
         "length": float(payload["lengthM"]),
         "curvature": jnp.asarray([sample["curvature"] for sample in samples], dtype=jnp.float32),
-        "target_speed": jnp.asarray([sample["targetSpeedMps"] for sample in samples], dtype=jnp.float32),
+        "target_speed": jnp.asarray(target_speed, dtype=jnp.float32),
     }
 
 
