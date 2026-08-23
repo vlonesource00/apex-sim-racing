@@ -60,9 +60,11 @@ function applyTrafficShield(decision, trafficSet, stage3 = false) {
   if (openSide < 0 && negativeBlocked && !positiveBlocked) openSide = 0.78;
   if (openSide > 0 && positiveBlocked && !negativeBlocked) openSide = -0.78;
   if (boxedIn) openSide = 0;
-  const geometricLine = trafficSet.ahead?.gap < 30
-    ? (trafficSet.ahead.opponentLateral >= trafficSet.ahead.egoLateral ? -0.66 : 0.66) : 0;
-  const requestedLine = stage3 ? geometricLine : decision.lineOffset;
+  // Stage 3 supplies tactical intent; it must not silently replace the
+  // learned line with a hard-coded side. Immediate collision urgency may
+  // still blend toward an open corridor, while the deterministic trajectory
+  // planner performs the full swept-path safety check downstream.
+  const requestedLine = decision.lineOffset;
   const safe = {
     ...decision,
     lineOffset: requestedLine * (1 - urgency) + openSide * urgency,

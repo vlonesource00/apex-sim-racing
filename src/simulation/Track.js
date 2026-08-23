@@ -299,6 +299,9 @@ export class Circuit {
     const banking = 1 + Math.abs(Math.sin(current.bank)) * 0.34;
     const gradeFactor = clamp(1 - current.grade * 0.22, 0.9, 1.08);
     const base = Math.sqrt(1.08 * banking * 9.81 / Math.max(bend, 0.0025));
-    return clamp(base * gradeFactor * (0.88 + skill * 0.16), 20, 68);
+    // Do not impose an arcade minimum corner speed. The old 20 m/s floor
+    // commanded 4g+ through the tightest spline sections and guaranteed an
+    // off-track excursion regardless of how good the steering controller was.
+    return clamp(base * gradeFactor * (0.88 + skill * 0.16), 8, 68);
   }
 }

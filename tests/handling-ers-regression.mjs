@@ -181,6 +181,21 @@ assert.ok(regenElectricalIntegral <= regenMechanicalIntegral * prototype.ers.reg
 assert.ok(prototype.ers.capacityJ >= 6e6 && prototype.ers.capacityJ <= 10e6, 'prototype ERS store must stay tactically finite');
 assert.ok(prototype.ers.soc >= 0 && prototype.ers.soc <= 1, 'ERS SOC must stay bounded');
 
+// Partial lift harvest is a real rear-axle brake event, not a free SOC grant.
+// Probe both modes so AUTO and a coasting ATTACK approach share the same
+// physically paid recovery path.
+for (const mode of ['AUTO', 'ATTACK']) {
+  const partialLift = settledVehicle('prototype', `ers-partial-lift-${mode.toLowerCase()}`);
+  partialLift.setERSMode(mode);
+  const beforeLift = partialLift.ers.energyJ;
+  partialLift.controls = { throttle: 0.06, brake: 0, steer: 0, handbrake: 0 };
+  partialLift.step(DT, flatTrack, true);
+  assert.ok(partialLift.ers.regenMechanicalPowerW > 1, `${mode} partial lift must harvest mechanical power`);
+  assert.ok(partialLift.ers.regenTorqueNm > 0, `${mode} partial lift must apply negative rear torque`);
+  assert.ok(partialLift.ers.energyJ > beforeLift, `${mode} partial lift must increase SOC`);
+  assert.ok(Math.abs((partialLift.ers.energyJ - beforeLift) - partialLift.ers.regenElectricalPowerW * DT) <= 0.2, `${mode} partial lift SOC delta must match electrical integral`);
+}
+
 const empty = settledVehicle('prototype', 'ers-empty');
 empty.setERSMode('ATTACK');
 empty.ers.energyJ = 0;

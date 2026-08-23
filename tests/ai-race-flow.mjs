@@ -18,6 +18,7 @@ const player = new Vehicle({ id: 'player', name: 'Idle Player', color: '#e85038'
 const aiCars = Array.from({ length: 8 }, (_, index) => new Vehicle({ id: `ai-${index + 1}`, name: `AI ${index + 1}`, color: '#ffffff' }));
 const vehicles = [player, ...aiCars];
 const controllers = new Map(aiCars.map((vehicle, index) => [vehicle.id, new AIController(index + 1)]));
+for (const controller of controllers.values()) controller.setDebugEnabled(true);
 const race = new RaceState(track, vehicles, 3);
 
 for (const [index, vehicle] of vehicles.entries()) {
@@ -28,6 +29,10 @@ race.reset();
 
 const telemetry = new Map(aiCars.map((vehicle) => [vehicle.id, {
   belowTwoSeconds: 0,
+  belowTwoRunSeconds: 0,
+  maxBelowTwoRunSeconds: 0,
+  belowTwoReasons: {},
+  firstStall: null,
   offTrackSeconds: 0,
   recoverySeconds: 0,
   deadlockSeconds: 0,
@@ -73,7 +78,18 @@ for (let step = 0; step < SIMULATION_SECONDS / FIXED_TIMESTEP; step += 1) {
       }
       continue;
     }
-    if (vehicle.speed < STALL_SPEED) stats.belowTwoSeconds += FIXED_TIMESTEP;
+    if (vehicle.speed < STALL_SPEED) {
+      stats.belowTwoSeconds += FIXED_TIMESTEP;
+      stats.belowTwoRunSeconds += FIXED_TIMESTEP;
+      stats.maxBelowTwoRunSeconds = Math.max(stats.maxBelowTwoRunSeconds, stats.belowTwoRunSeconds);
+      const debug = controllers.get(vehicle.id).debugState;
+      const reason = `${debug?.mode ?? 'UNKNOWN'}:${debug?.reason ?? 'UNKNOWN'}`;
+      stats.belowTwoReasons[reason] = (stats.belowTwoReasons[reason] ?? 0) + FIXED_TIMESTEP;
+      stats.firstStall ??= { timeS: Number(race.raceTime.toFixed(2)), distanceM: Number(vehicle.distance.toFixed(1)),
+        speedKmh: Number((vehicle.speed * 3.6).toFixed(1)), throttle: Number((vehicle.controls.throttle ?? 0).toFixed(2)),
+        brake: Number((vehicle.controls.brake ?? 0).toFixed(2)), desiredSpeed: Number((debug?.desiredSpeed ?? -1).toFixed(2)),
+        reason, hazardId: debug?.hazardId ?? null, closeFront: debug?.closeFront ?? null };
+    } else stats.belowTwoRunSeconds = 0;
     if (vehicle.surface.zone === 'runoff' || vehicle.surface.zone === 'grass') stats.offTrackSeconds += FIXED_TIMESTEP;
     if (controllers.get(vehicle.id).recovery > 0) stats.recoverySeconds += FIXED_TIMESTEP;
     stats.sampledSpeeds.push(vehicle.speed);
@@ -93,7 +109,11 @@ const perCar = aiCars.map((vehicle) => {
     lap: race.entries.get(vehicle.id).lap,
     speedKmh: kmh(vehicle.speed),
     zone: vehicle.surface.zone,
-    belowTwoSeconds: Number(stats.belowTwoSeconds.toFixed(2)),
+      belowTwoSeconds: Number(stats.belowTwoSeconds.toFixed(2)),
+      maxBelowTwoRunSeconds: Number(stats.maxBelowTwoRunSeconds.toFixed(2)),
+      belowTwoReasons: Object.fromEntries(Object.entries(stats.belowTwoReasons)
+        .sort((a, b) => b[1] - a[1]).map(([reason, seconds]) => [reason, Number(seconds.toFixed(2))])),
+      firstStall: stats.firstStall,
     offTrackSeconds: Number(stats.offTrackSeconds.toFixed(2)),
     recoverySeconds: Number(stats.recoverySeconds.toFixed(2)),
     marshalRecoveries: controllers.get(vehicle.id).marshalRecoveries,
@@ -108,7 +128,7 @@ const result = {
   raceSeconds: Number(race.raceTime.toFixed(2)),
   aiFinishers: aiCars.filter((vehicle) => vehicle.finished).length,
   totalFinishers: vehicles.filter((vehicle) => vehicle.finished).length,
-  stallers: perCar.filter((car) => car.belowTwoSeconds > STALL_LIMIT_SECONDS).map((car) => car.id),
+  stallers: perCar.filter((car) => car.maxBelowTwoRunSeconds > STALL_LIMIT_SECONDS).map((car) => car.id),
   collisionDeadlocks: perCar.filter((car) => car.maxDeadlockSeconds > STALL_LIMIT_SECONDS).map((car) => car.id),
   postFinishCoverageFailures: perCar.filter((car) => car.postFinishSeconds < 10).map((car) => car.id),
   postFinishOffTrackCars: perCar.filter((car) => car.postFinishOffTrackSeconds > 0 || car.postFinishOffTrackStops > 0).map((car) => car.id),

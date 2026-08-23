@@ -5,7 +5,7 @@ import { KeyboardDynamics } from './input/KeyboardDynamics.js';
 const GAME_CODES = new Set([
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space',
   'BracketLeft', 'BracketRight', 'Semicolon', 'Quote', 'KeyE', 'KeyP', 'KeyQ',
-  'F3', 'F4', 'F5', 'F6', 'KeyN'
+  'F3', 'F4', 'F5', 'F6', 'F7', 'KeyN'
 ]);
 
 const padValue = (button) => clamp(typeof button === 'number' ? button : button?.value ?? 0, 0, 1);

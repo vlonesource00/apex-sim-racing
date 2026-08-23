@@ -20,6 +20,8 @@ import { PitSystem, PIT_STATES, applyPitIntentToControls } from './simulation/Pi
 import { PassQualityTracker } from './simulation/PassQuality.js';
 import { RLShadowController } from './ai/RLShadowController.js';
 import stage3Policy from '../rl/policies/stage3_pack_policy.json';
+import { ReferenceLapRecorder } from './telemetry/ReferenceLapRecorder.js';
+import { ReferenceLapProfile } from './telemetry/ReferenceLapProfile.js';
 
 const FIXED_TIMESTEP = 1 / 120;
 const MAX_STEPS_PER_FRAME = 14;
@@ -61,6 +63,18 @@ const rlShadowControllers = new Map(vehicles.slice(1).map((vehicle) => [vehicle.
 const race = new RaceState(track, vehicles, 3);
 const pitSystem = new PitSystem(track, vehicles, ENDURANCE_PARK);
 const passQuality = new PassQualityTracker(track);
+const referenceLapRecorder = new ReferenceLapRecorder();
+let referenceLapProfile = null;
+
+function loadReferenceLap(payload) {
+  referenceLapProfile = new ReferenceLapProfile(payload);
+  return referenceLapProfile.summary;
+}
+
+function compareReferenceLap(payload) {
+  if (!referenceLapProfile) throw new Error('Load a baseline reference lap first');
+  return referenceLapProfile.compare(payload);
+}
 
 function placeGrid() {
   vehicles.forEach((vehicle, index) => {
@@ -140,6 +154,7 @@ function startRace() {
   race.reset();
   pitSystem.reset(vehicles);
   passQuality.reset();
+  referenceLapRecorder.reset();
   input.keyboardDynamics.reset();
   raceStarted = true;
   hud.setRaceActive(true);
@@ -196,6 +211,7 @@ function fixedStep() {
   for (const vehicle of vehicles) vehicle.step(FIXED_TIMESTEP, track, canDrive);
   const collisionStats = resolveVehicleCollisions(vehicles, 3);
   passQuality.update(vehicles, collisionStats, FIXED_TIMESTEP, race.phase === 'racing');
+  referenceLapRecorder.update(FIXED_TIMESTEP, player, track, race);
   race.lastImpact = Math.max(race.lastImpact, collisionStats.maxImpact / 18);
   physicsCounter += 1;
 }
@@ -214,6 +230,7 @@ function processActions() {
     const mode = cameraRig.setFree();
     playerVisual.setCockpitView(mode === 'COCKPIT');
   }
+  if (input.consume('F7') && raceStarted) referenceLapRecorder.toggle(player, track, race);
   if (!raceStarted) return;
   if (input.consume('KeyC')) playerVisual.setCockpitView(cameraRig.toggle() === 'COCKPIT');
   if (input.consume('KeyM')) hud.setMuted(audio.toggleMute());
@@ -269,6 +286,7 @@ function frame(now) {
     pit: pitSystem.status(player),
     rlShadow: rlShadowEnabled ? selectedAI?.rlShadow : null,
     passQuality: passQuality.snapshot(),
+    referenceLap: referenceLapRecorder.status(),
     rlMode,
     spectatedName: cameraRig.mode === 'SPECTATE' ? selectedAI?.name : null
   });
@@ -287,7 +305,8 @@ window.addEventListener('resize', () => {
 requestAnimationFrame(frame);
 window.__APEX73__ = {
   track, vehicles, visuals, environment, assets, metrics, race, controllers, aiDebug, cameraRig, rlShadowControllers, passQuality,
-  interactions: { updateAerodynamicWakes, resolveVehicleCollisions }, pitSystem, scenario: ENDURANCE_PARK,
+  interactions: { updateAerodynamicWakes, resolveVehicleCollisions }, pitSystem, scenario: ENDURANCE_PARK, referenceLapRecorder,
+  loadReferenceLap, compareReferenceLap, get referenceLapProfile() { return referenceLapProfile; },
   get enduranceVisuals() { return enduranceVisuals; },
   startRace, selectClass, rlShadowEnabled, rlHybridEnabled, rlMode, get raceStarted() { return raceStarted; }
 };

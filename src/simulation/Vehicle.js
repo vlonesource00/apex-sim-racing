@@ -1,4 +1,4 @@
-import { clamp, damp, length2, localToWorld, worldToLocal, wrapAngle } from '../core/math.js';
+import { clamp, damp, length2, localToWorld, worldToLocal } from '../core/math.js';
 import { carSpecFor } from './CarSpecs.js';
 import { createTireState, tireForces } from './Tire.js';
 
@@ -306,17 +306,43 @@ export class Vehicle {
       soc: initialSoc,
       minSoc: enabled ? clamp(finite(preset.minSoc, 0.04), 0, 0.95) : 0,
       maxDeployPowerW: enabled ? Math.max(0, finite(preset.maxDeployPowerW, 50e3)) : 0,
+      // AUTO is intentionally a sustainable partial-deployment mode.  Keep
+      // maxDeployPowerW as the electrical hard ceiling (and public contract),
+      // while this separate ceiling limits ordinary AUTO use.
+      autoDeployPowerW: enabled
+        ? Math.min(
+          Math.max(0, finite(preset.autoDeployPowerW, finite(preset.maxDeployPowerW, 50e3) * 0.6)),
+          Math.max(0, finite(preset.maxDeployPowerW, 50e3))
+        )
+        : 0,
       maxRegenPowerW: enabled ? Math.max(0, finite(preset.maxRegenPowerW, 200e3)) : 0,
+      // Lift harvest is deliberately lower than brake regen.  It still enters
+      // the rear axle as negative torque, so recovered energy is paid for by
+      // a measurable deceleration rather than being granted for free.
+      maxLiftRegenPowerW: enabled
+        ? Math.min(
+          Math.max(0, finite(preset.maxLiftRegenPowerW, finite(preset.maxRegenPowerW, 200e3) * 0.22)),
+          Math.max(0, finite(preset.maxRegenPowerW, 200e3))
+        )
+        : 0,
+      liftRegenThrottleThreshold: enabled ? clamp(finite(preset.liftRegenThrottleThreshold, 0.035), 0, 0.2) : 0,
       deployEfficiency: enabled ? clamp(finite(preset.deployEfficiency, 0.91), 0.5, 1) : 1,
       regenEfficiency: enabled ? clamp(finite(preset.regenEfficiency, 0.72), 0.3, 1) : 1,
       maxDeployTorqueNm: enabled ? Math.max(0, finite(preset.maxDeployTorqueNm, 950)) : 0,
       maxRegenTorqueNm: enabled ? Math.max(0, finite(preset.maxRegenTorqueNm, 3000)) : 0,
+      maxLiftRegenTorqueNm: enabled
+        ? Math.min(
+          Math.max(0, finite(preset.maxLiftRegenTorqueNm, finite(preset.maxRegenTorqueNm, 3000) * 0.34)),
+          Math.max(0, finite(preset.maxRegenTorqueNm, 3000))
+        )
+        : 0,
       minDeploySpeed: enabled ? Math.max(0.5, finite(preset.minDeploySpeed, 4.5)) : Infinity,
       maxDeploySpeed: enabled ? Math.max(10, finite(preset.maxDeploySpeed, 94)) : 0,
       deployPowerW: 0, deployMechanicalPowerW: 0, regenPowerW: 0, regenMechanicalPowerW: 0,
       regenElectricalPowerW: 0, driveTorqueNm: 0, regenTorqueNm: 0,
       rearAxleOmegaRadS: 0,
-      state: enabled ? 'READY' : 'OFF'
+      state: enabled ? 'READY' : 'OFF',
+      liftHarvest: false
     };
   }
 
@@ -350,6 +376,7 @@ export class Vehicle {
     ers.regenElectricalPowerW = 0;
     ers.driveTorqueNm = 0;
     ers.regenTorqueNm = 0;
+    ers.liftHarvest = false;
     // ERS torque is defined at the rear axle.  The wheel angular speed is the
     // only valid divisor for a power-to-torque conversion; vehicle speed would
     // produce a force in newtons and overdrive the rear tyres by 1/radius.
@@ -369,13 +396,18 @@ export class Vehicle {
     const batteryAvailable = Math.max(0, ers.energyJ - ers.capacityJ * ers.minSoc);
     const batteryRoom = Math.max(0, ers.capacityJ - ers.energyJ);
     const braking = brake > 0.035;
-    const canDeploy = !braking && throttle > 0.06 && speed >= ers.minDeploySpeed && speed <= ers.maxDeploySpeed && batteryAvailable > 0.5;
+    const liftThreshold = clamp(finite(ers.liftRegenThrottleThreshold, 0.12), 0, 0.2);
+    const liftDemand = clamp((liftThreshold - throttle) / Math.max(0.001, liftThreshold), 0, 1);
+    const canDeploy = !braking && throttle > liftThreshold && speed >= ers.minDeploySpeed && speed <= ers.maxDeploySpeed && batteryAvailable > 0.5;
     if (canDeploy) {
       // AUTO keeps the rear axle predictable during a corner; ATTACK is the
       // driver's explicit override and remains available at full request.
       const cornerReserve = clamp(1 - Math.abs(this.steering) * 10, 0.22, 1);
+      const deploymentCeiling = ers.mode === 'ATTACK'
+        ? ers.maxDeployPowerW
+        : Math.min(ers.maxDeployPowerW, Math.max(0, finite(ers.autoDeployPowerW, ers.maxDeployPowerW * 0.38)));
       const modeDemand = ers.mode === 'ATTACK' ? 1 : clamp((0.2 + throttle * 0.8) * cornerReserve, 0, 1);
-      let requestedElectricalPower = ers.maxDeployPowerW * modeDemand;
+      let requestedElectricalPower = deploymentCeiling * modeDemand;
       requestedElectricalPower *= clamp(batteryAvailable / Math.max(1, ers.capacityJ * 0.08), 0, 1);
       requestedElectricalPower = clamp(requestedElectricalPower, 0, ers.maxDeployPowerW);
       const requestedMechanicalPower = requestedElectricalPower * ers.deployEfficiency;
@@ -399,12 +431,17 @@ export class Vehicle {
     // Regen is available under braking and as a light AUTO lift harvest.  It
     // is represented as rear-axle negative torque; Vehicle.step subtracts an
     // equal amount from friction-brake torque, preventing double braking.
-    const canRegen = !canDeploy && speed > 2.5 && batteryRoom > 0.5 && (braking || (ers.mode === 'AUTO' && throttle < 0.035));
+    const liftHarvest = !canDeploy && !braking && (ers.mode === 'AUTO' || ers.mode === 'ATTACK') && liftDemand > 0;
+    const canRegen = !canDeploy && speed > 2.5 && batteryRoom > 0.5 && (braking || liftHarvest);
     if (canRegen) {
-      const demand = braking ? clamp(brake, 0, 1) : 0.24;
-      const requestedMechanicalPower = Math.min(ers.maxRegenPowerW, ers.maxRegenPowerW * demand);
+      const demand = braking ? clamp(brake, 0, 1) : liftDemand;
+      const requestedMechanicalPower = braking
+        ? Math.min(ers.maxRegenPowerW, ers.maxRegenPowerW * demand)
+        : Math.min(ers.maxRegenPowerW, Math.max(0, finite(ers.maxLiftRegenPowerW, ers.maxRegenPowerW * 0.22)) * demand);
       const requestedRearBrakeTorque = brake * this.spec.brakeTorqueNm * (1 - this.electronics.brakeBias);
-      const regenTorqueLimit = Math.min(ers.maxRegenTorqueNm, Math.max(0, requestedRearBrakeTorque));
+      const regenTorqueLimit = braking
+        ? Math.min(ers.maxRegenTorqueNm, Math.max(0, requestedRearBrakeTorque))
+        : Math.min(ers.maxRegenTorqueNm, Math.max(0, finite(ers.maxLiftRegenTorqueNm, ers.maxRegenTorqueNm * 0.34)));
       const requestedTorque = requestedMechanicalPower / rearAxleOmega;
       const axleTorque = clamp(requestedTorque, 0, regenTorqueLimit);
       const actualMechanicalPower = Math.min(ers.maxRegenPowerW, axleTorque * rearAxleOmega);
@@ -418,10 +455,15 @@ export class Vehicle {
       ers.regenPowerW = ers.regenMechanicalPowerW;
       ers.regenElectricalPowerW = ers.regenMechanicalPowerW * ers.regenEfficiency;
       ers.energyJ += ers.regenElectricalPowerW * dt;
+      ers.liftHarvest = liftHarvest && ers.regenMechanicalPowerW > 1;
     }
     ers.energyJ = clamp(finite(ers.energyJ), 0, ers.capacityJ);
     ers.soc = ers.capacityJ > 0 ? clamp(ers.energyJ / ers.capacityJ, 0, 1) : 0;
-    ers.state = ers.deployPowerW > 20 ? 'DEPLOY' : ers.regenPowerW > 20 ? 'REGEN' : 'READY';
+    ers.state = ers.deployPowerW > 20
+      ? 'DEPLOY'
+      : ers.liftHarvest
+        ? 'LIFT_REGEN'
+        : ers.regenPowerW > 20 ? 'REGEN' : 'READY';
   }
 
   _automaticGear(forwardSpeed, throttle) {
@@ -802,18 +844,6 @@ export class Vehicle {
     totalTorque -= this.yawRate * yawDamping;
     const worldForce = localToWorld(totalFx, totalFz, this.yaw);
     const centreSurface = track.surfaceAt(this.position.x, this.position.z);
-    if (!this.player && this.aiTarget) {
-      // AI gets a finite steering authority, not a position correction. This
-      // keeps fleet path following robust while every tyre/suspension state
-      // still supplies the forces that move the car.
-      const desiredYaw = Math.atan2(this.aiTarget.x - this.position.x, this.aiTarget.z - this.position.z);
-      const headingError = clamp(wrapAngle(desiredYaw - this.yaw), -0.55, 0.55);
-      totalTorque += headingError * this.inertiaTensor.y * 4.4 - this.yawRate * 90;
-      const lateralError = clamp(centreSurface.lateral - (this.aiTarget.lateral ?? 0), -5, 5);
-      const laneForce = clamp(lateralError * this.mass * 2.8, -this.mass * G * 0.32, this.mass * G * 0.32);
-      worldForce.x -= centreSurface.normal.x * laneForce;
-      worldForce.z -= centreSurface.normal.z * laneForce;
-    }
     // Gravity component along circuit grade, expressed in world-plan coordinates.
     worldForce.x -= centreSurface.tangent.x * this.mass * G * Math.sin(centreSurface.grade);
     worldForce.z -= centreSurface.tangent.z * this.mass * G * Math.sin(centreSurface.grade);

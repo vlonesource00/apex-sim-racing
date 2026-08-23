@@ -105,9 +105,10 @@ export class HUD {
         <span>TOW <b data-role="tow">0%</b></span><span>DIRTY <b data-role="dirty">0%</b></span>
         <span>PIT <b data-role="pit">NONE</b></span>
         <span>STEER <b data-role="steer">—</b></span><span>G <b data-role="gforce">0.00</b></span>
+        <span>REF <b data-role="reference">IDLE</b></span>
       </div>
 
-      <div class="help">WASD / ARROWS DRIVE · SPACE HANDBRAKE · C CAMERA · T TELEMETRY · P PIT REQUEST<br>[ / ] TC · ; / ' ABS · B BRAKE BIAS · E ERS · R RESET · M MUTE · F3 AI DEBUG · F4 FIELD · N NEXT AI · F5 SPECTATE · F6 NO-CLIP</div>
+      <div class="help">WASD / ARROWS DRIVE · SPACE HANDBRAKE · C CAMERA · T TELEMETRY · P PIT REQUEST<br>[ / ] TC · ; / ' ABS · B BRAKE BIAS · E ERS · R RESET · M MUTE · F3 AI DEBUG · F4 FIELD · N NEXT AI · F5 SPECTATE · F6 NO-CLIP · F7 REFERENCE LAP</div>
       <button class="mute" data-role="mute" type="button">AUDIO: ON</button>
 
       <div class="finish" data-role="finish">
@@ -234,6 +235,10 @@ export class HUD {
     this.$('steer').textContent = vehicle.steering > 0.012 ? 'L' : vehicle.steering < -0.012 ? 'R' : '—';
     const g = Math.hypot(finite(vehicle.localAcceleration?.x), finite(vehicle.localAcceleration?.z)) / 9.81;
     this.$('gforce').textContent = g.toFixed(2);
+    const reference = context?.referenceLap;
+    this.$('reference').textContent = reference?.recording
+      ? reference.armed ? 'ARMED' : `REC ${reference.samples}`
+      : reference?.lastExport?.complete ? `${finite(reference.lastExport.durationS).toFixed(1)}S` : 'IDLE';
 
     const electronics = vehicle.electronics ?? {};
     this.$('tc').textContent = electronics.tcLevel ?? 0;

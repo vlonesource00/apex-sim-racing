@@ -160,7 +160,14 @@ export const CAR_SPECS = freeze({
       initialSoc: 0.74,
       minSoc: 0.04,
       maxDeployPowerW: 120e3,
+      // AUTO is a sustainable road-car strategy; ATTACK alone gets the full
+      // electrical ceiling.  Lift harvest is a small, paid rear-axle brake
+      // torque, distinct from the 200 kW brake-regen ceiling.
+      autoDeployPowerW: 56e3,
       maxRegenPowerW: 200e3,
+      maxLiftRegenPowerW: 44e3,
+      maxLiftRegenTorqueNm: 1020,
+      liftRegenThrottleThreshold: 0.12,
       deployEfficiency: 0.91,
       regenEfficiency: 0.72,
       // Torque limits are rear-axle values.  They are chosen against the
