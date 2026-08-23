@@ -18,15 +18,19 @@ export class ReferenceLapRecorder {
     this.lastExport = null;
   }
 
-  start(vehicle, track, race) {
+  start(vehicle, track, race, { armed = true } = {}) {
     this.reset();
     this.recording = true;
-    this.armed = true;
+    this.armed = Boolean(armed);
     this.startLap = race.entries.get(vehicle.id)?.lap ?? 0;
     this.startedAt = finite(race.raceTime);
     this.trackLength = finite(track.length);
     this.vehicleClass = vehicle.classKey;
     return this.status();
+  }
+
+  startImmediate(vehicle, track, race) {
+    return this.start(vehicle, track, race, { armed: false });
   }
 
   stop({ download = true, complete = false } = {}) {
@@ -90,7 +94,13 @@ export class ReferenceLapRecorder {
       tyreTempC: Number(average(wheels.map((wheel) => wheel.temperature)).toFixed(2)),
       tyreWear: Number(average(wheels.map((wheel) => wheel.wear)).toFixed(5)),
       ersSoc: Number(finite(vehicle.ers?.soc).toFixed(4)),
-      surface: vehicle.surface?.zone ?? 'unknown'
+      surface: vehicle.surface?.zone ?? 'unknown',
+      aiMode: vehicle.aiTactical?.source ?? null,
+      aiPhase: vehicle.aiTactical?.racecraftPhase ?? null,
+      aiDesiredSpeed: Number(finite(vehicle.aiTactical?.desiredSpeed).toFixed(3)),
+      aiTrajectorySpeedLimit: Number(finite(vehicle.aiTactical?.trajectorySpeedLimit).toFixed(3)),
+      aiReferenceSpeed: Number(finite(vehicle.aiTactical?.referenceSpeed).toFixed(3)),
+      aiReferenceEnvelopeSpeed: Number(finite(vehicle.aiTactical?.referenceEnvelopeSpeed).toFixed(3))
     });
     return null;
   }

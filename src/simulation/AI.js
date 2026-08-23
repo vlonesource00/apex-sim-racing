@@ -47,6 +47,12 @@ export class AIController {
     this.trafficThreat = 'CLEAR';
     this.trafficTTC = 99;
     this.predictedLateralSeparation = 99;
+    this.referenceProfile = null;
+  }
+
+  setReferenceProfile(profile = null) {
+    this.referenceProfile = profile && typeof profile.targetAtDistance === 'function' ? profile : null;
+    return Boolean(this.referenceProfile);
   }
 
   setDebugEnabled(enabled) {
@@ -233,14 +239,30 @@ export class AIController {
     // tight corner. Keeping the high-speed straight look-ahead here was the
     // reason the controller visibly drew a broad arc and ran wide at hairpins.
     const trackingDistance = clamp(lookAhead * 0.72 / (1 + localCurvature * 20), 5.5, 24);
-    const baseTargetSpeed = track.targetSpeed(vehicle.distance + lookAhead * 0.8, this.skill);
+    const physicalTargetSpeed = track.targetSpeed(vehicle.distance + lookAhead * 0.8, this.skill);
+    const referenceTarget = this.referenceProfile?.paceAtDistance?.(vehicle.distance + lookAhead * 0.8)
+      ?? this.referenceProfile?.targetAtDistance(vehicle.distance + lookAhead * 0.8) ?? null;
+    // Human telemetry supplies feed-forward intent, never direct controls.
+    // The selected trajectory, tyre state and live traffic remain authoritative.
+    // A larger correction is permitted only where the reference proves the
+    // section is flat-out and low-utilisation, and the live car is settled.
+    // This fixes false centre-line curvature limits without teaching the AI to
+    // blindly copy a human speed through a differently chosen line.
+    const liveSlip = Math.atan2(finite(vehicle.localVelocity?.x), Math.max(3, Math.abs(finite(vehicle.localVelocity?.z, vehicle.speed))));
+    const referencePaceDelta = referenceTarget
+      ? clamp(finite(referenceTarget.speed) * 0.985 - physicalTargetSpeed, 0, 6)
+      : 0;
+    const baseTargetSpeed = physicalTargetSpeed + referencePaceDelta;
     this.trajectoryPlan = this.trajectoryPlanner.plan({
       vehicle, track, desiredOffset,
       // A committed manoeuvre has one authoritative lane. Allowing a current-
       // lane fallback made the debug path say “attack” while the controller
       // continued following and braking behind the target.
       fallbackOffsets: recovering || decision.committed || decision.defending ? [] : [policyLine, finite(current.lateral)],
-      trafficEntries: traffic.entries, targetSpeed: baseTargetSpeed, aggression,
+      // Keep geometry prediction independent of the learned pace feed-forward.
+      // Feeding a higher reference speed into spatial horizon generation made
+      // the planner see distant spline curvature sooner and brake twice.
+      trafficEntries: traffic.entries, targetSpeed: physicalTargetSpeed, aggression,
       racecraftPhase: this.passPhase, recovering, pitActive: Boolean(vehicle.pitIntent?.active), urgent: decision.committed || decision.defending,
       roadMargin: yieldingRejoin ? Math.max(roadMargin, Math.abs(finite(current.lateral)) + 0.5) : roadMargin,
       lookAhead, trackingDistance
@@ -353,7 +375,7 @@ export class AIController {
       brake = vehicle.speed > desiredSpeed + 2.5 ? 0.25 : 0;
     }
     if (emergency) { throttle = 0; brake = Math.max(brake, clamp(0.55 + (3.2 - Math.min(3.2, hazard.ttc)) * 0.16, 0.55, 1)); }
-    const slip = Math.atan2(finite(vehicle.localVelocity?.x), Math.max(3, Math.abs(finite(vehicle.localVelocity?.z, vehicle.speed))));
+    const slip = liveSlip;
     const instability = clamp(Math.max((Math.abs(slip) - 0.14) / 0.22, (Math.abs(vehicle.yawRate) - 1.05) / 1.2), 0, 1);
     if (instability > 0 && !emergency) { throttle *= 1 - instability * 0.65; brake *= 1 - instability * 0.7; }
 
@@ -372,7 +394,8 @@ export class AIController {
       upcomingCurvature: this.upcomingCurvature, insideLaneOffset: this.insideLaneOffset,
       outsideLaneOffset: this.outsideLaneOffset, insideLaneClear: this.insideLaneClear,
       outsideLaneClear: this.outsideLaneClear, safetyIntervention: finite(policy?.safetyIntervention),
-      trajectoryCurvature, trajectorySpeedLimit,
+      trajectoryCurvature, trajectorySpeedLimit, desiredSpeed,
+      referenceSpeed: finite(referenceTarget?.speed), referenceEnvelopeSpeed: finite(referenceTarget?.envelopeSpeed),
       defenseTargetId: this.racecraft.defenseTargetId, defending: Boolean(decision.defending)
     };
     if (vehicle.classKey === 'prototype') vehicle.setERSMode?.(committedPathReady ? 'ATTACK' : 'AUTO');

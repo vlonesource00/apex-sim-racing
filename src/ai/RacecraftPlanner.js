@@ -159,15 +159,20 @@ export class RacecraftPlanner {
     const targetSpeed = Math.max(vehicle.speed, target.other.speed + 7);
     const inside = awareness.evaluateCorridor({ vehicle, track, traffic, terminalOffset: insideOffset, targetId: target.other.id, targetSpeed });
     const outside = awareness.evaluateCorridor({ vehicle, track, traffic, terminalOffset: outsideOffset, targetId: target.other.id, targetSpeed });
-    const candidates = [
+    const evaluatedCandidates = [
       { side: turnSign, phase: 'ATTACK_INSIDE', corridor: inside },
       { side: -turnSign, phase: Math.abs(finite(turn?.curvature)) > 0.0045 ? 'SWITCHBACK' : 'ATTACK_OUTSIDE', corridor: outside }
-    ].filter((candidate) => candidate.corridor.collisionFree && candidate.corridor.targetSeparationM >= 3.55)
+    ];
+    const candidates = evaluatedCandidates
+      .filter((candidate) => candidate.corridor.collisionFree && candidate.corridor.targetSeparationM >= 3.55)
       .sort((a, b) => b.corridor.minimumClearanceM - a.corridor.minimumClearanceM);
 
-    const closing = target.relativeLongitudinalVelocity > 0.1 || target.delta < 11;
     const attackRange = target.other.speed < vehicle.speed * 0.72 ? 38 : 28;
-    if (closing && target.delta < attackRange && candidates.length) {
+    // A clear lane is itself the permission to attack. Requiring an existing
+    // closing velocity deadlocked the controller with its own follow-gap rule:
+    // it matched speed, therefore never became “closing”, therefore drafted
+    // indefinitely despite drawing a valid pass corridor in debug view.
+    if (target.delta < attackRange && candidates.length) {
       const chosen = candidates[0];
       this.phase = chosen.phase;
       this.targetId = target.other.id;
@@ -185,8 +190,18 @@ export class RacecraftPlanner {
     // occupied. It never overrides an available overtake.
     this.draftAge += dt;
     this.phase = 'DRAFT';
-    return { phase: 'DRAFT', desiredOffset: clamp(target.otherLateral, -roadMargin, roadMargin), target, corridor: null, committed: false,
-      waitReason: candidates.length ? 'CLOSING_GAP' : 'NO_SAFE_LATERAL_CORRIDOR' };
+    // If both full corridors are blocked, begin a conservative lateral probe
+    // after one second instead of staring at the rear bumper. The trajectory
+    // planner and follow-gap controller remain authoritative until a complete
+    // body-width corridor becomes legal.
+    const probe = [...evaluatedCandidates]
+      .sort((a, b) => b.corridor.minimumClearanceM - a.corridor.minimumClearanceM)[0];
+    const probeOffset = this.draftAge > 1 && probe
+      ? clamp(finite(target.otherLateral) + (finite(probe.corridor.offset) - finite(target.otherLateral)) * 0.48,
+        -roadMargin, roadMargin)
+      : clamp(target.otherLateral, -roadMargin, roadMargin);
+    return { phase: 'DRAFT', desiredOffset: probeOffset, target, corridor: probe?.corridor ?? null, committed: false,
+      waitReason: this.draftAge > 1 ? 'CREATE_PASS_CORRIDOR' : 'NO_SAFE_LATERAL_CORRIDOR' };
   }
 }
 

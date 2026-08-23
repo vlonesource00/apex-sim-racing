@@ -68,12 +68,19 @@ let referenceLapProfile = null;
 
 function loadReferenceLap(payload) {
   referenceLapProfile = new ReferenceLapProfile(payload);
+  for (const controller of controllers.values()) controller.setReferenceProfile(referenceLapProfile);
   return referenceLapProfile.summary;
+}
+
+function clearReferenceLap() {
+  referenceLapProfile = null;
+  for (const controller of controllers.values()) controller.setReferenceProfile(null);
+  return true;
 }
 
 function compareReferenceLap(payload) {
   if (!referenceLapProfile) throw new Error('Load a baseline reference lap first');
-  return referenceLapProfile.compare(payload);
+  return referenceLapProfile.distanceDeltaReport(payload);
 }
 
 function placeGrid() {
@@ -306,7 +313,7 @@ requestAnimationFrame(frame);
 window.__APEX73__ = {
   track, vehicles, visuals, environment, assets, metrics, race, controllers, aiDebug, cameraRig, rlShadowControllers, passQuality,
   interactions: { updateAerodynamicWakes, resolveVehicleCollisions }, pitSystem, scenario: ENDURANCE_PARK, referenceLapRecorder,
-  loadReferenceLap, compareReferenceLap, get referenceLapProfile() { return referenceLapProfile; },
+  loadReferenceLap, clearReferenceLap, compareReferenceLap, get referenceLapProfile() { return referenceLapProfile; },
   get enduranceVisuals() { return enduranceVisuals; },
   startRace, selectClass, rlShadowEnabled, rlHybridEnabled, rlMode, get raceStarted() { return raceStarted; }
 };
