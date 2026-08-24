@@ -1,6 +1,7 @@
 import { wrapAngle } from '../core/math.js';
 import { HybridPolicy } from './HybridPolicy.js';
 import { initialReducedState } from './ReducedOrderVehicle.js';
+import { STAGE5_MANEUVERS } from './Stage5TacticalInterface.js';
 
 const LOOKAHEAD_M = [0, 18, 40, 70, 110, 160];
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
@@ -37,6 +38,27 @@ function trafficFeatures(traffic) {
     clamp(traffic.relativeSpeed / 20, -1, 1), clamp(traffic.closing / 20, -1, 1),
     clamp(traffic.ttc / 6, 0, 1.5), clamp(traffic.clearance / 4, -1, 1),
     traffic.ahead ? 1 : 0, traffic.sideBySide ? 1 : 0];
+}
+
+const STAGE5_CLASS = {
+  prototype: [0, 925 / 1400, 1.92 / 2, 4.505 / 5, 10.4 / 12, 24 / 25, 11.5 / 14],
+  gt: [1, 1325 / 1400, 1.58 / 2, 1.75 / 5, 7 / 12, 17.5 / 25, 10 / 14],
+  touring: [2, 1280 / 1400, 1.34 / 2, 0.62 / 5, 5.4 / 12, 13.5 / 25, 8.5 / 14]
+};
+
+function stage5Memory(vehicle) {
+  const phase = vehicle.aiTactical?.passPhase ?? 'FOLLOW';
+  const lateral = vehicle.surface?.lateral ?? 0;
+  const target = vehicle.aiTactical?.targetLaneOffsetM ?? lateral;
+  let maneuver = 'FOLLOW';
+  if (phase === 'DRAFT') maneuver = 'DRAFT';
+  else if (phase === 'DEFEND') maneuver = target > lateral ? 'DEFEND_LEFT' : 'DEFEND_RIGHT';
+  else if (phase === 'SWITCHBACK') maneuver = 'SWITCHBACK';
+  else if (phase.includes('ATTACK') || phase.includes('DIVE')) maneuver = target > lateral ? 'ATTACK_LEFT' : 'ATTACK_RIGHT';
+  else if (phase === 'RETURN') maneuver = 'ABORT';
+  const oneHot = STAGE5_MANEUVERS.map((name) => name === maneuver ? 1 : 0);
+  return [...oneHot, clamp((vehicle.aiTactical?.commitmentRemainingS ?? 0) / 4, 0, 1),
+    clamp((vehicle.aiTactical?.passIntent?.targetClosingSpeed ?? 0) / 12, -1, 1)];
 }
 
 function applyTrafficShield(decision, trafficSet, stage3 = false) {
@@ -88,6 +110,13 @@ export class RLShadowController {
     this.last = null;
   }
 
+  reset() {
+    this.clock = 0;
+    this.decisions = 0;
+    this.last = null;
+    this.policy.resetMemory?.();
+  }
+
   snapshot(vehicle, track, vehicles = []) {
     const point = track.atDistance(vehicle.distance);
     const trackHeading = Math.atan2(point.tangent.x, point.tangent.z);
@@ -112,8 +141,19 @@ export class RLShadowController {
     ];
     const trafficSet = trafficSnapshots(vehicle, vehicles, track);
     const traffic = trafficSet.primary;
-    if ((this.policy.policy?.observationSize ?? 19) >= 27) {
-      if ((this.policy.policy?.observationSize ?? 19) >= 43) {
+    const observationSize = this.policy.policy?.observationSize ?? 19;
+    if (observationSize >= 65) {
+      const classData = STAGE5_CLASS[vehicle.classKey] ?? STAGE5_CLASS.gt;
+      const wheels = vehicle.wheels ?? [];
+      const tireWear = wheels.length ? Math.max(...wheels.map((wheel) => wheel.wear ?? 0)) : 0;
+      const tireTemperature = wheels.length
+        ? wheels.reduce((sum, wheel) => sum + (wheel.carcassTemperatureC ?? 80), 0) / wheels.length : 80;
+      values.push(...[0, 1, 2].map((id) => id === classData[0] ? 1 : 0), ...classData.slice(1),
+        tireWear, (tireTemperature - 80) / 60,
+        ...trafficFeatures(trafficSet.ahead), ...trafficFeatures(trafficSet.side),
+        ...trafficFeatures(trafficSet.behind), ...stage5Memory(vehicle));
+    } else if (observationSize >= 27) {
+      if (observationSize >= 43) {
         values.push(...trafficFeatures(trafficSet.ahead), ...trafficFeatures(trafficSet.side),
           ...trafficFeatures(trafficSet.behind));
       } else values.push(...trafficFeatures(traffic));
@@ -131,12 +171,15 @@ export class RLShadowController {
     const { state, observation, traffic, trafficSet } = this.snapshot(vehicle, track, vehicles);
     const learnedDecision = this.policy.inferSafe(observation, state);
     const stage3 = observation.length >= 43;
-    const decision = applyTrafficShield(learnedDecision, trafficSet, stage3);
+    const decision = learnedDecision.source === 'RL_STAGE5'
+      ? learnedDecision : applyTrafficShield(learnedDecision, trafficSet, stage3);
     this.last = Object.freeze({ ...decision, enabled: true, decisions: ++this.decisions,
+      requestedDecision: Object.freeze({ ...learnedDecision }),
+      deployedPolicyDecision: Object.freeze({ ...decision }),
       safetyIntervention: Math.max(decision.safetyIntervention ?? 0, decision.trafficIntervention ?? 0),
       opponentId: traffic?.id ?? null, opponentGapM: traffic?.gap ?? null,
       opponentTtcS: traffic?.ttc ?? null, sideBySide: traffic?.sideBySide ?? false,
-      boxedIn: decision.boxedIn, policyStage: stage3 ? 3 : observation.length >= 27 ? 2 : 1,
+      boxedIn: decision.boxedIn, policyStage: observation.length >= 65 ? 5 : stage3 ? 3 : observation.length >= 27 ? 2 : 1,
       trafficSlots: stage3 ? [trafficSet.ahead?.id ?? null, trafficSet.side?.id ?? null, trafficSet.behind?.id ?? null] : null,
       observationSize: observation.length, timestampS: this.decisions * this.interval });
     vehicle.rlShadow = this.last;

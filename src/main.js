@@ -18,16 +18,11 @@ import { ENDURANCE_PARK } from './scenarios/EndurancePark.js';
 import { EnduranceScenarioVisuals } from './render/EnduranceScenarioVisuals.js';
 import { PitSystem, PIT_STATES, applyPitIntentToControls } from './simulation/PitSystem.js';
 import { PassQualityTracker } from './simulation/PassQuality.js';
-import { RLShadowController } from './ai/RLShadowController.js';
-import stage3Policy from '../rl/policies/stage3_pack_policy.json';
 import { ReferenceLapRecorder } from './telemetry/ReferenceLapRecorder.js';
 import { ReferenceLapProfile } from './telemetry/ReferenceLapProfile.js';
 
 const FIXED_TIMESTEP = 1 / 120;
 const MAX_STEPS_PER_FRAME = 14;
-const rlMode = new URLSearchParams(window.location.search).get('rl') ?? 'off';
-const rlShadowEnabled = rlMode === 'shadow' || rlMode === 'hybrid';
-const rlHybridEnabled = rlMode === 'hybrid';
 const app = document.querySelector('#app');
 const menu = document.querySelector('#start-menu');
 const menuStart = document.querySelector('[data-action="start-race"]');
@@ -59,7 +54,6 @@ const player = new Vehicle({ id: 'player', name: driverNames[0], color: paint[0]
 const vehicles = [player];
 for (let i = 1; i <= 8; i += 1) vehicles.push(new Vehicle({ id: `ai-${i}`, name: driverNames[i], color: paint[i], spec: gridVariants[i] }));
 const controllers = new Map(vehicles.slice(1).map((vehicle, index) => [vehicle.id, new AIController(index + 1)]));
-const rlShadowControllers = new Map(vehicles.slice(1).map((vehicle) => [vehicle.id, new RLShadowController(stage3Policy)]));
 const race = new RaceState(track, vehicles, 3);
 const pitSystem = new PitSystem(track, vehicles, ENDURANCE_PARK);
 const passQuality = new PassQualityTracker(track);
@@ -106,6 +100,12 @@ function placeGrid() {
     const grid = race.gridPosition(index);
     vehicle.resetTo(track, grid.distance, grid.lateral);
   });
+}
+
+function resetAIForRace() {
+  for (const vehicle of vehicles.slice(1)) {
+    controllers.get(vehicle.id)?.resetForRace(vehicle);
+  }
 }
 placeGrid();
 race.reset();
@@ -176,6 +176,7 @@ function startRace() {
   playerVisual.variant = selectedClass;
   attachPlayerAsset();
   placeGrid();
+  resetAIForRace();
   race.reset();
   pitSystem.reset(vehicles);
   passQuality.reset();
@@ -199,6 +200,7 @@ function resetPlayer() {
 
 function restartRace() {
   placeGrid();
+  resetAIForRace();
   race.reset();
   pitSystem.reset(vehicles);
   passQuality.reset();
@@ -223,11 +225,6 @@ function fixedStep() {
   }
   pitSystem.update(FIXED_TIMESTEP, vehicles);
   for (const vehicle of vehicles.slice(1)) {
-    const decision = rlShadowEnabled ? rlShadowControllers.get(vehicle.id).update(vehicle, track, FIXED_TIMESTEP, vehicles) : null;
-    if (rlHybridEnabled && decision && decision.decisions !== vehicle.aiAppliedDecision) {
-      controllers.get(vehicle.id).setTacticalPolicy(decision);
-      vehicle.aiAppliedDecision = decision.decisions;
-    }
     controllers.get(vehicle.id).update(vehicle, vehicles, track, race, FIXED_TIMESTEP);
   }
   for (const vehicle of vehicles) applyPitIntentToControls(vehicle.controls, vehicle.pitIntent);
@@ -244,7 +241,7 @@ function fixedStep() {
 function processActions() {
   if (!raceStarted && input.consume('Enter')) startRace();
   if (input.consume('F3')) aiDebug.toggle();
-  if (input.consume('F4')) aiDebug.toggleFieldView();
+  if (input.consume('F4')) { aiDebug.setVisible(true); aiDebug.toggleFieldView(); }
   if (input.consume('KeyN')) aiDebug.cycleSelection();
   if (input.consume('F5')) {
     aiDebug.setVisible(true);
@@ -267,6 +264,9 @@ function processActions() {
   if (input.consume('Quote')) player.adjustABS(1);
   if (input.consume('KeyB')) player.cycleBrakeBias();
   if (input.consume('KeyE')) player.cycleERSMode?.();
+  if (input.consume('KeyG')) player.toggleTransmissionMode?.();
+  if (input.consume('Comma')) player.requestShift?.(-1);
+  if (input.consume('Period')) player.requestShift?.(1);
   if (input.consume('KeyP')) {
     const state = pitSystem.status(player).state;
     if (state === PIT_STATES.NONE) pitSystem.request(player);
@@ -309,10 +309,8 @@ function frame(now) {
     leaderboard: race.standings(player),
     aiDebug: aiDebug.snapshot(),
     pit: pitSystem.status(player),
-    rlShadow: rlShadowEnabled ? selectedAI?.rlShadow : null,
     passQuality: passQuality.snapshot(),
     referenceLap: referenceLapRecorder.status(),
-    rlMode,
     spectatedName: cameraRig.mode === 'SPECTATE' ? selectedAI?.name : null
   });
   renderer.render(scene, camera);
@@ -329,12 +327,12 @@ window.addEventListener('resize', () => {
 });
 requestAnimationFrame(frame);
 window.__APEX73__ = {
-  track, vehicles, visuals, environment, assets, metrics, race, controllers, aiDebug, cameraRig, rlShadowControllers, passQuality,
+  track, vehicles, visuals, environment, assets, metrics, race, controllers, aiDebug, cameraRig, passQuality,
   interactions: { updateAerodynamicWakes, resolveVehicleCollisions }, pitSystem, scenario: ENDURANCE_PARK, referenceLapRecorder,
   loadReferenceLap, clearReferenceLap, compareReferenceLap, defaultReferencePromise,
   get referenceLapProfile() { return referenceLapProfile; }, get referenceLapSource() { return referenceLapSource; },
   get enduranceVisuals() { return enduranceVisuals; },
-  startRace, selectClass, rlShadowEnabled, rlHybridEnabled, rlMode, get raceStarted() { return raceStarted; }
+  startRace, selectClass, aiMode: 'GEMINI_GAUNTLET', get raceStarted() { return raceStarted; }
 };
 document.documentElement.dataset.apexReady = 'true';
 setTimeout(() => loadingScreen?.classList.add('dismissed'), 650);

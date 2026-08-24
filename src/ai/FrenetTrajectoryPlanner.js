@@ -1,7 +1,7 @@
 import { clamp, wrapAngle } from '../core/math.js';
 
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
-const PASS_PHASES = new Set(['ATTACK_INSIDE', 'ATTACK_OUTSIDE', 'DIVE_INSIDE', 'SWITCHBACK']);
+const PASS_PHASES = new Set(['ATTACK_LEFT', 'ATTACK_RIGHT']);
 
 // Minimum-jerk lateral interpolation. Position, velocity and acceleration are
 // continuous at both ends, unlike a direct line-offset ramp.
@@ -29,7 +29,8 @@ export class FrenetTrajectoryPlanner {
 
   _candidate({
     vehicle, track, startLateral, terminalLateral, desiredOffset, transitionTime,
-    targetSpeed, trafficEntries, roadMargin, committed, aggression, horizon
+    targetSpeed, trafficEntries, roadMargin, committed, aggression, horizon, targetId,
+    referenceLineAtDistance
   }) {
     const points = [];
     const startSpeed = Math.max(0, finite(vehicle.speed));
@@ -48,8 +49,13 @@ export class FrenetTrajectoryPlanner {
       const predictedSpeed = clamp(startSpeed + acceleration * time, 0, 90);
       const forwardDistance = Math.max(0, startSpeed * time + 0.5 * acceleration * time * time);
       const blend = minimumJerk(time / Math.max(0.25, transitionTime));
-      const lateral = startLateral + (terminalLateral - startLateral) * blend;
       const reference = track.atDistance(vehicle.distance + forwardDistance);
+      const followsReference = typeof referenceLineAtDistance === 'function'
+        && Math.abs(terminalLateral - desiredOffset) < 0.08;
+      const guidedLateral = followsReference
+        ? clamp(finite(referenceLineAtDistance(reference.s), terminalLateral), -roadMargin, roadMargin)
+        : terminalLateral;
+      const lateral = startLateral + (guidedLateral - startLateral) * blend;
       const world = index === 0
         ? { x: finite(vehicle.position.x), y: finite(vehicle.position.y) + 0.08, z: finite(vehicle.position.z) }
         : track.lateralPoint(reference, lateral, 0.08);
@@ -73,7 +79,15 @@ export class FrenetTrajectoryPlanner {
         const combinedClearance = Math.max(longitudinalClearance, lateralClearance);
         minimumClearance = Math.min(minimumClearance, combinedClearance);
         if (time >= 0.45) futureMinimumClearance = Math.min(futureMinimumClearance, combinedClearance);
-        if (longitudinalClearance < 0 && lateralClearance < 0) {
+        const isPassTarget = targetId !== null && entry.other.id === targetId;
+        const initialTargetSeparation = Math.abs(startLateral - opponentStart);
+        const separatingPassTrajectory = isPassTarget
+          && Math.abs(terminalLateral - opponentStart) >= 3.45
+          && lateralGap >= initialTargetSeparation - 0.08;
+        // The longitudinal controller coordinates arrival at the target's
+        // rear axle. A pass target must not invalidate an otherwise legal
+        // lane change merely because its swept box is initially ahead of us.
+        if (longitudinalClearance < 0 && lateralClearance < 0 && !separatingPassTrajectory) {
           predictedCollisions += 1;
           collisionRisk += 25000 + (-longitudinalClearance + 0.2) * (-lateralClearance + 0.2) * 2200;
         } else if (Math.abs(longitudinalGap) < 11 && lateralClearance < 1.4) {
@@ -124,9 +138,9 @@ export class FrenetTrajectoryPlanner {
 
   plan({
     vehicle, track, desiredOffset = 0, fallbackOffsets = [], trafficEntries = [],
-    targetSpeed = vehicle?.speed ?? 0, aggression = 0.5, racecraftPhase = 'NONE',
+    targetSpeed = vehicle?.speed ?? 0, aggression = 0.5, racecraftPhase = 'NONE', targetId = null,
     recovering = false, pitActive = false, urgent = false, roadMargin = null,
-    lookAhead = 12, trackingDistance = null
+    lookAhead = 12, trackingDistance = null, referenceLineAtDistance = null
   }) {
     const currentLateral = finite(vehicle?.surface?.lateral);
     const maximumSurfaceMargin = finite(track?.roadHalfWidth, 6.5) - 1.18
@@ -136,7 +150,7 @@ export class FrenetTrajectoryPlanner {
     const committed = pitActive || PASS_PHASES.has(racecraftPhase);
     const urgentManeuver = committed || recovering || urgent;
     const offsets = uniqueOffsets(
-      recovering
+      urgentManeuver
         ? [intendedOffset]
         : [intendedOffset, ...fallbackOffsets, currentLateral],
       -margin, margin
@@ -159,7 +173,8 @@ export class FrenetTrajectoryPlanner {
           vehicle, track, startLateral: currentLateral, terminalLateral,
           desiredOffset: intendedOffset, transitionTime: nominalTransition * scale,
           targetSpeed, trafficEntries, roadMargin: margin,
-          aggression: clamp(finite(aggression, 0.5), 0, 1), horizon,
+          aggression: clamp(finite(aggression, 0.5), 0, 1), horizon, targetId,
+          referenceLineAtDistance,
           committed: urgentManeuver
         }));
       }

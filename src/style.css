@@ -89,7 +89,7 @@ canvas { display: block; }
 .ers-card .bar i { display: block; width: 100%; height: 100%; background: var(--cyan); transform: scaleX(0); transform-origin: left; }
 .ers-values { display: flex; justify-content: space-between; color: #aebeb0; font: 500 8px ui-monospace, Consolas, monospace; }
 
-.ai-panel { top: 267px; right: 18px; width: 302px; display: none; border-color: #35e6ed66; }
+.ai-panel { top: 267px; right: 18px; width: 430px; max-height: calc(100vh - 292px); overflow: auto; display: none; border-color: #35e6ed66; }
 .ai-panel.show { display: block; }
 .ai-panel header b { color: var(--cyan); }
 .ai-driver { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0 5px; }
@@ -102,6 +102,10 @@ canvas { display: block; }
 .ai-grid span { color: var(--muted); font: 500 8px ui-monospace, Consolas, monospace; }
 .ai-grid b { float: right; color: #f1f8eb; font-weight: 600; }
 .ai-controls { padding: 6px 7px; color: var(--lime); background: #e9ff4512; font: 600 9px ui-monospace, Consolas, monospace; }
+.ai-thought { display: grid; gap: 3px; padding-top: 7px; }
+.ai-thought div { display: grid; grid-template-columns: 112px 1fr; gap: 7px; padding: 4px 6px; border-left: 1px solid #35e6ed44; background: #07120dcc; }
+.ai-thought small { color: #789487; font: 600 7px ui-monospace, Consolas, monospace; letter-spacing: .08em; }
+.ai-thought b { overflow: hidden; color: #d8e8db; font: 600 8px ui-monospace, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .ai-footer { display: flex; justify-content: space-between; gap: 5px; padding-top: 7px; color: #7e9484; font: 500 7px ui-monospace, Consolas, monospace; letter-spacing: .05em; }
 
 .motec { top: 96px; left: 272px; width: 368px; display: none; }

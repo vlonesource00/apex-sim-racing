@@ -83,6 +83,8 @@ export class Vehicle {
     this.damage = 0;
     this.impact = 0;
     this.shiftTimer = 0;
+    this.transmissionMode = 'automatic';
+    this.lastShiftRejected = null;
     this.autoBlip = 0;
     this.rideHeight = 0.068;
     this.aero = {
@@ -211,6 +213,7 @@ export class Vehicle {
     this.engineOmega = this.rpm * TAU / 60;
     this.gear = 1;
     this.shiftTimer = 0;
+    this.lastShiftRejected = null;
     this.autoBlip = 0;
     this.cooldownActive = false;
     this.cooldownTime = 0;
@@ -467,6 +470,7 @@ export class Vehicle {
   }
 
   _automaticGear(forwardSpeed, throttle) {
+    if (this.transmissionMode !== 'automatic') return;
     if (this.shiftTimer > 0) return;
     const ratios = this.spec.gearRatios;
     if (this.rpm > this.spec.limiterRpm - 120 && this.gear < ratios.length - 1 && forwardSpeed > 8) {
@@ -478,6 +482,30 @@ export class Vehicle {
       this.autoBlip = 1;
     }
     if (forwardSpeed < -1.8 && throttle < 0.1) this.gear = 1;
+  }
+
+  toggleTransmissionMode() {
+    this.transmissionMode = this.transmissionMode === 'manual' ? 'automatic' : 'manual';
+    this.lastShiftRejected = null;
+    return this.transmissionMode;
+  }
+
+  requestShift(direction) {
+    if (this.transmissionMode !== 'manual' || this.shiftTimer > 0) return false;
+    const nextGear = clamp(this.gear + Math.sign(finite(direction)), 1, this.spec.gearRatios.length - 1);
+    if (nextGear === this.gear) return false;
+    const roadOmega = Math.abs(this.localVelocity?.z ?? this.speed) / this.wheelRadius;
+    const predictedRpm = roadOmega * this.spec.gearRatios[nextGear] * this.spec.finalDrive * 9.5493;
+    if (nextGear < this.gear && predictedRpm > this.spec.limiterRpm + 120) {
+      this.lastShiftRejected = 'OVERREV';
+      return false;
+    }
+    const previousGear = this.gear;
+    this.gear = nextGear;
+    this.shiftTimer = nextGear > previousGear ? 0.09 : 0.075;
+    if (direction < 0) this.autoBlip = 1;
+    this.lastShiftRejected = null;
+    return true;
   }
 
   _drivenIndices() {
@@ -514,7 +542,9 @@ export class Vehicle {
     this.engineOmega = this.rpm * TAU / 60;
     this.shiftTimer = Math.max(0, this.shiftTimer - dt);
     this.autoBlip = Math.max(0, this.autoBlip - dt * 6);
-    const transmissionTorque = (this.engineTorque - this.engineBrakeTorque) * this.spec.gearRatios[this.gear] * this.spec.finalDrive * this.spec.drivetrainEfficiency;
+    const shiftTorqueFactor = this.shiftTimer > 0 ? 0.12 : 1;
+    const transmissionTorque = (this.engineTorque - this.engineBrakeTorque) * this.spec.gearRatios[this.gear]
+      * this.spec.finalDrive * this.spec.drivetrainEfficiency * shiftTorqueFactor;
     return { driven, transmissionTorque };
   }
 

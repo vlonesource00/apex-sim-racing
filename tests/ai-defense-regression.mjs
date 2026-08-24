@@ -30,6 +30,7 @@ const race = { phase: 'racing', raceTime: 10, elapsed: 10,
 let defenseSeconds = 0;
 let firstDefenseGap = null;
 let defenseOffset = null;
+let firstDefenseDebug = null;
 let contactFrames = 0;
 let offTrackSeconds = 0;
 let lateralReversals = 0;
@@ -50,6 +51,9 @@ for (let step = 0; step < 10 / DT; step += 1) {
     defenseSeconds += DT;
     firstDefenseGap ??= leader.distance - challenger.distance;
     defenseOffset ??= leaderAI.debugState.targetOffset;
+    firstDefenseDebug ??= { targetOffset: leaderAI.racecraft.targetOffset,
+      intent: leaderAI.racecraft.intent, closeBehind: leaderAI.debugState.closeBehind,
+      corridor: leaderAI.debugState.thought };
     const direction = Math.sign(leaderAI.debugState.targetOffset);
     if (priorDirection && direction && direction !== priorDirection) lateralReversals += 1;
     if (direction) priorDirection = direction;
@@ -64,7 +68,8 @@ const result = {
   offTrackSeconds: Number(offTrackSeconds.toFixed(2)),
   finalGapM: Number((leader.distance - challenger.distance).toFixed(2)),
   leaderMode: leaderAI.debugState?.mode,
-  challengerMode: challengerAI.debugState?.mode
+  challengerMode: challengerAI.debugState?.mode,
+  firstDefenseDebug
 };
 
 console.log(JSON.stringify(result, null, 2));

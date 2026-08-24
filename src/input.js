@@ -5,6 +5,7 @@ import { KeyboardDynamics } from './input/KeyboardDynamics.js';
 const GAME_CODES = new Set([
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space',
   'BracketLeft', 'BracketRight', 'Semicolon', 'Quote', 'KeyE', 'KeyP', 'KeyQ',
+  'KeyG', 'Comma', 'Period',
   'F3', 'F4', 'F5', 'F6', 'F7', 'KeyN'
 ]);
 

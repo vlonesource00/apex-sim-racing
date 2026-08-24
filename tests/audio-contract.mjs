@@ -52,10 +52,13 @@ assert.ok(audio.ersGain.gain.value > 0.01, 'ERS deployment must drive its gain')
 assert.ok(audio.regenGain.gain.value > 0.005, 'Regen must drive its distinct gain');
 assert.ok(audio.curbGain.gain.value > 0.01, 'Curb contact must drive rumble');
 assert.ok(audio.pitLimiterGain.gain.value > 0.004, 'Pit limiter must drive harmonic');
+assert.ok(audio.context.oscillators.every((oscillator) => oscillator.type !== 'sine'), 'Harsh pure sine oscillators are forbidden');
+assert.ok(audio.ersOscillator.frequency.value <= 850, 'ERS tone must remain below the ear-fatiguing upper band');
 const beforeShift = audio.context.oscillators.length;
 vehicle.gear = 4;
 audio.update(vehicle, 0.2);
 assert.ok(audio.context.oscillators.length >= beforeShift + 2, 'Upshift must emit decisive transient pair');
+assert.ok(audio.context.oscillators.every((oscillator) => oscillator.type !== 'sine'), 'Shift and curb transients must avoid pure sine tones');
 for (let index = 0; index < 55; index += 1) audio.update(vehicle, 1);
 assert.ok(audio.ambientIndex >= 2, 'Ambient horn/warning/PA scheduler must advance deterministically');
 assert.equal(typeof audio.toggleMute(), 'boolean', 'toggleMute public contract regressed');

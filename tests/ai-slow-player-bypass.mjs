@@ -13,11 +13,11 @@ const setForwardSpeed = (vehicle, speed) => {
   vehicle.velocity.z = vehicle.forward.z * speed;
 };
 
-const runScenario = ({ label, playerSpeed }) => {
-  const player = new Vehicle({ id: `${label}-player`, player: true, spec: 'touring' });
-  const attacker = new Vehicle({ id: `${label}-attacker`, spec: 'prototype' });
+const runScenario = ({ label, spec, playerSpeed }) => {
+  const player = new Vehicle({ id: `${label}-${spec}-player`, player: true, spec });
+  const attacker = new Vehicle({ id: `${label}-${spec}-attacker`, spec });
   player.resetTo(track, 118, 0);
-  attacker.resetTo(track, 90, 0);
+  attacker.resetTo(track, playerSpeed < 2.5 ? 80 : 90, 0);
   setForwardSpeed(player, playerSpeed);
   setForwardSpeed(attacker, 28);
 
@@ -52,14 +52,14 @@ const runScenario = ({ label, playerSpeed }) => {
     minimumSeparation = Math.min(minimumSeparation,
       Math.hypot(attacker.position.x - player.position.x, attacker.position.z - player.position.z));
     if (attacker.surface?.zone === 'grass' || attacker.surface?.zone === 'runoff') offTrackSeconds += DT;
-    if (controller.debugState?.racecraftPhase === 'DRAFT') draftSeconds += DT;
-    if (['ATTACK_INSIDE', 'ATTACK_OUTSIDE', 'DIVE_INSIDE', 'SWITCHBACK']
+    if (controller.debugState?.racecraftPhase === 'FOLLOW') draftSeconds += DT;
+    if (['ATTACK_LEFT', 'ATTACK_RIGHT']
       .includes(controller.debugState?.racecraftPhase)) attackSeconds += DT;
     if (completedAt === null && attacker.distance > player.distance + 4) completedAt = race.raceTime;
   }
 
   return {
-    label,
+    label, spec,
     playerSpeedKph: Number((playerSpeed * 3.6).toFixed(1)),
     completed: completedAt !== null,
     completedAtS: completedAt === null ? null : Number(completedAt.toFixed(2)),
@@ -74,11 +74,11 @@ const runScenario = ({ label, playerSpeed }) => {
   };
 };
 
-const results = [
-  runScenario({ label: 'stopped', playerSpeed: 0 }),
-  runScenario({ label: 'crawling', playerSpeed: 4 }),
-  runScenario({ label: 'slow-driving', playerSpeed: 12 })
-];
+const results = ['prototype', 'gt', 'touring'].flatMap((spec) => [
+  runScenario({ label: 'stopped', spec, playerSpeed: 0 }),
+  runScenario({ label: 'crawling', spec, playerSpeed: 4 }),
+  runScenario({ label: 'slow-driving', spec, playerSpeed: 12 })
+]);
 
 console.log(JSON.stringify(results, null, 2));
 for (const result of results) {

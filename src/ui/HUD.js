@@ -76,6 +76,16 @@ export class HUD {
           <span>THREAT <b data-role="ai-threat">CLEAR</b></span><span>TTC <b data-role="ai-ttc">—</b></span>
         </div>
         <div class="ai-controls" data-role="ai-controls">S — · T — · B —</div>
+        <div class="ai-thought">
+          <div><small>PLANNER INTENT</small><b data-role="ai-request">—</b></div>
+          <div><small>TACTICAL BASIS</small><b data-role="ai-alternatives">—</b></div>
+          <div><small>PLANNER DEPLOYED</small><b data-role="ai-deployed">—</b></div>
+          <div><small>TARGET / COMMIT</small><b data-role="ai-commit">—</b></div>
+          <div><small>CORRIDOR</small><b data-role="ai-corridor">—</b></div>
+          <div><small>SAFETY VERDICT</small><b data-role="ai-safety">—</b></div>
+          <div><small>WAIT / ABORT</small><b data-role="ai-rejection">—</b></div>
+          <div><small>PACE / ERS</small><b data-role="ai-energy">—</b></div>
+        </div>
         <div class="ai-footer"><span data-role="ai-skill">SKILL — · AGG —</span><span>LINES = REACTIVE PLAN</span></div>
       </section>
 
@@ -97,6 +107,7 @@ export class HUD {
         <strong data-role="gear">1</strong>
         <div class="rpm-bar"><i data-role="rpm"></i></div>
         <span data-role="rpm-label">1,100 RPM</span>
+        <span data-role="gearbox-mode">AUTO</span>
       </section>
 
       <div class="telemetry-strip">
@@ -108,7 +119,7 @@ export class HUD {
         <span>REF <b data-role="reference">IDLE</b></span>
       </div>
 
-      <div class="help">WASD / ARROWS DRIVE · SPACE HANDBRAKE · C CAMERA · T TELEMETRY · P PIT REQUEST<br>[ / ] TC · ; / ' ABS · B BRAKE BIAS · E ERS · R RESET · M MUTE · F3 AI DEBUG · F4 FIELD · N NEXT AI · F5 SPECTATE · F6 NO-CLIP · F7 REFERENCE LAP</div>
+      <div class="help">WASD / ARROWS DRIVE · SPACE HANDBRAKE · C CAMERA · T TELEMETRY · P PIT REQUEST<br>G AUTO/MANUAL · , DOWNSHIFT · . UPSHIFT · [ / ] TC · ; / ' ABS · B BRAKE BIAS · E ERS · R RESET · M MUTE · F3 AI DEBUG · F4 FIELD · N NEXT AI · F5 SPECTATE · F6 NO-CLIP · F7 REFERENCE LAP</div>
       <button class="mute" data-role="mute" type="button">AUDIO: ON</button>
 
       <div class="finish" data-role="finish">
@@ -166,31 +177,46 @@ export class HUD {
     const enabled = Boolean(snapshot?.enabled);
     this.$('ai-panel').classList.toggle('show', enabled);
     if (!enabled) return;
+    const now = globalThis.performance?.now?.() ?? Date.now();
+    if (now - (this._aiDebugLastRenderAt ?? -Infinity) < 100) return;
+    this._aiDebugLastRenderAt = now;
     this.$('ai-name').textContent = snapshot.selectedName ?? state?.name ?? '—';
     this.$('ai-class').textContent = String(state?.classKey ?? state?.class ?? '—').toUpperCase();
     this.$('ai-mode').textContent = state?.mode ?? 'WAIT';
-    const shadow = snapshot?.rlShadow;
-    const tactical = state?.tacticalPolicy;
-    this.$('ai-reason').textContent = shadow?.enabled
-      ? `${state?.reason ?? 'AI ACTIVE'} · RL${shadow?.policyStage ?? ''} ${tactical?.source === 'RL_HYBRID' ? 'LIVE' : 'SHADOW'} ${Math.round(finite(shadow.safetyIntervention) * 100)}% SAFE${shadow?.boxedIn ? ' · BOXED' : ''}`
-      : state?.reason ?? 'WAITING FOR AI TELEMETRY';
+    const thought = state?.thought ?? {};
+    this.$('ai-reason').textContent = `${state?.reason ?? 'WAITING FOR AI TELEMETRY'} · GEMINI GAUNTLET`;
     this.$('ai-speed').textContent = state ? `${(finite(state.currentSpeed) * 3.6).toFixed(1)} KM/H` : '—';
     this.$('ai-target-speed').textContent = state ? `${(finite(state.desiredSpeed) * 3.6).toFixed(1)} KM/H` : '—';
     this.$('ai-offset').textContent = state ? `${fixed(state.targetOffset)} M` : '—';
     this.$('ai-line').textContent = state ? `${fixed(state.lineOffset)} M` : '—';
     const front = state?.closeFront;
     const behind = state?.closeBehind;
-    this.$('ai-gaps').textContent = shadow?.opponentId
-      ? `${String(shadow.opponentId).toUpperCase()} ${fixed(shadow.opponentGapM, 1)}M`
-      : front ? `${front.name ?? front.id} ${fixed(front.deltaM, 1)}M` : behind ? `B ${fixed(behind.deltaM, 1)}M` : 'CLEAR';
+    this.$('ai-gaps').textContent = front ? `${front.name ?? front.id} ${fixed(front.deltaM, 1)}M` : behind ? `B ${fixed(behind.deltaM, 1)}M` : 'CLEAR';
     const side = state?.nearestSide;
     this.$('ai-side').textContent = side ? `${side.name ?? side.id} ${fixed(side.directM, 1)}M` : 'CLEAR';
     this.$('ai-threat').textContent = String(state?.trafficThreat ?? 'CLEAR');
-    const ttc = finite(shadow?.opponentTtcS, finite(state?.trafficTTC, 99));
+    const ttc = finite(state?.trafficTTC, 99);
     this.$('ai-ttc').textContent = ttc >= 98 ? '—' : `${ttc.toFixed(2)}S`;
     const controls = state?.controls ?? state?.output;
     this.$('ai-controls').textContent = controls
       ? `S ${fixed(controls.steer)} · T ${fixed(controls.throttle)} · B ${fixed(controls.brake)}` : 'S — · T — · B —';
+    this.$('ai-request').textContent = thought.requestedManeuver ?? state?.racecraftPhase ?? state?.mode ?? 'PACE';
+    this.$('ai-alternatives').textContent = 'TRACK WIDTH · TIME GAIN · OCCUPANCY · COMMITMENT';
+    const deployedManeuver = thought.deployedManeuver && thought.deployedManeuver !== 'NONE'
+      ? thought.deployedManeuver : state?.racecraftPhase && state.racecraftPhase !== 'NONE' ? state.racecraftPhase : state?.mode ?? '—';
+    this.$('ai-deployed').textContent = `${deployedManeuver} · ${thought.straightSend ? 'STRAIGHT SEND' : thought.committed ? 'COMMITTED' : thought.defending ? 'DEFENDING' : 'REPLANNING'}`;
+    this.$('ai-commit').textContent = `${String(thought.targetId ?? state?.passTargetId ?? state?.draftTargetId ?? 'CLEAR').toUpperCase()} · ${finite(state?.passTimer).toFixed(2)}S LIVE`;
+    const selectedOffset = finite(thought.trajectorySelectedOffsetM, finite(state?.trajectorySelectedOffsetM));
+    const minimumClearance = finite(thought.trajectoryMinimumClearanceM, finite(state?.trajectoryMinimumClearanceM, 99));
+    this.$('ai-corridor').textContent = `${fixed(selectedOffset)}M · CLR ${fixed(minimumClearance, 1)}M`;
+    const thresholdSafe = Boolean(thought.thresholdSafeTrajectory);
+    const safeTrajectory = (Boolean(thought.trajectoryCollisionFree ?? state?.trajectoryCollisionFree) || thresholdSafe)
+      && Boolean(thought.trajectoryRoadLegal ?? state?.trajectoryRoadLegal);
+    const collisionFree = Boolean(thought.trajectoryCollisionFree ?? state?.trajectoryCollisionFree);
+    const roadLegal = Boolean(thought.trajectoryRoadLegal ?? state?.trajectoryRoadLegal);
+    this.$('ai-safety').textContent = `${safeTrajectory ? thresholdSafe && !collisionFree ? 'THRESHOLD LEGAL' : 'VALID' : 'REJECTED'} · COLL ${collisionFree ? 'FREE' : 'MARGIN'} · ROAD ${roadLegal ? 'LEGAL' : 'ILLEGAL'}${thought.corridorBlockerId ? ` · ${String(thought.corridorBlockerId).toUpperCase()}` : ''}`;
+    this.$('ai-rejection').textContent = thought.abortReason ?? thought.waitReason ?? state?.abortReason ?? state?.waitReason ?? 'NONE';
+    this.$('ai-energy').textContent = `CLOSE ${fixed(finite(thought.requestedClosingSpeedMps))}M/S · GAIN ${fixed(thought.predictedTimeGainS, 2)}S`;
     this.$('ai-skill').textContent = state ? `SKILL ${Math.round(finite(state.skill) * 100)} · AGG ${Math.round(finite(state.aggression) * 100)}` : 'SKILL — · AGG —';
     this.$('ai-selection').textContent = 'N NEXT AI';
     this.$('ai-field').textContent = snapshot.fieldView ? 'FIELD' : 'SELECTED';
@@ -205,6 +231,7 @@ export class HUD {
     this.$('phase').textContent = String(race.phase ?? 'grid').toUpperCase();
     this.$('speed').textContent = String(Math.round(finite(vehicle.speed) * 3.6)).padStart(3, '0');
     this.$('gear').textContent = vehicle.finished ? '—' : (vehicle.gear ?? 1);
+    this.$('gearbox-mode').textContent = vehicle.transmissionMode === 'manual' ? 'MANUAL' : 'AUTO';
     const rpm = Math.round(finite(vehicle.rpm) / 100) * 100;
     this.$('rpm-label').textContent = `${rpm.toLocaleString('en-GB')} RPM`;
     const limiter = Math.max(1500, finite(vehicle.spec?.limiterRpm, 7700));
@@ -272,14 +299,10 @@ export class HUD {
       notice.textContent = cameraMode === 'FREE'
         ? 'NO-CLIP · WASD MOVE · Q/E HEIGHT · ARROWS LOOK · SHIFT BOOST · F6 EXIT'
         : cameraMode === 'SPECTATE'
-          ? `SPECTATE ${context?.spectatedName ?? 'AI'} · N NEXT · F5 EXIT${context?.rlShadow?.enabled ? context?.rlMode === 'hybrid' ? ' · RL HYBRID LIVE' : ' · RL SHADOW' : ''}`
+          ? `SPECTATE ${context?.spectatedName ?? 'AI'} · N NEXT · F5 EXIT · GEMINI GAUNTLET`
           : pitState !== 'NONE'
         ? `PIT ${pitState} · LIMIT ${vehicle.pitSpeedLimitMps ? Math.round(vehicle.pitSpeedLimitMps * 3.6) + ' KM/H' : 'OPEN'}`
-        : context?.rlShadow?.enabled
-          ? context?.rlMode === 'hybrid'
-            ? `RL STAGE ${context.rlShadow.policyStage ?? 1} HYBRID LIVE · ${Math.round((context.rlShadow.safetyIntervention ?? 0) * 100)}% SAFETY · ${context?.passQuality?.cleanPasses ?? 0} CLEAN PASSES`
-            : `RL SHADOW · ${Math.round((context.rlShadow.safetyIntervention ?? 0) * 100)}% SAFETY · CONTROLS HEURISTIC`
-          : `CAMERA ${cameraMode} · T TELEMETRY · P PIT · R RESET`;
+        : `GEMINI GAUNTLET AI · ${context?.passQuality?.cleanPasses ?? 0} CLEAN PASSES · CAMERA ${cameraMode} · T TELEMETRY · P PIT · R RESET`;
     }
 
     this._updateStandings(context?.leaderboard, vehicle.id);

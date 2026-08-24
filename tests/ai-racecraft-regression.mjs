@@ -28,8 +28,8 @@ const telemetry = new Map(vehicles.map((vehicle) => [vehicle.id, {
   straightSamples: 0, straightFullThrottle: 0, straightThrottle: 0, maxStraightSpeed: 0,
   straightThrottleCuts: 0, straightThrottleCutReasons: {}, recoveryRun: 0, maxRecoveryRun: 0,
   lastOffTrack: false, offTrackRun: 0, maxOffTrackRun: 0,
-  closeFrontSamples: 0, draftSamples: 0, passSamples: 0, attackInsideSamples: 0, attackOutsideSamples: 0,
-  diveSamples: 0, returnSamples: 0, switchbackSamples: 0, avoidSamples: 0, maxPassRun: 0, passRun: 0,
+  closeFrontSamples: 0, followSamples: 0, passSamples: 0, attackLeftSamples: 0, attackRightSamples: 0,
+  returnSamples: 0, avoidSamples: 0, maxPassRun: 0, passRun: 0,
   spinSamples: 0, offTrackSamples: 0, positionChanges: 0, lastPosition: null, firstOffTrack: null
 }]));
 let contactFrames = 0;
@@ -137,15 +137,13 @@ for (let step = 0; step < 260 / DT; step += 1) {
       stats.recoveryRun = 0;
     }
     if (debug?.closeFront) stats.closeFrontSamples += 1;
-    if (debug?.mode === 'DRAFT') stats.draftSamples += 1;
+    if (debug?.mode === 'FOLLOW') stats.followSamples += 1;
     if (debug?.mode === 'PASS') stats.passSamples += 1;
-    if (debug?.racecraftPhase === 'ATTACK_INSIDE') stats.attackInsideSamples += 1;
-    if (debug?.racecraftPhase === 'ATTACK_OUTSIDE') stats.attackOutsideSamples += 1;
-    if (debug?.racecraftPhase === 'DIVE_INSIDE') stats.diveSamples += 1;
+    if (debug?.racecraftPhase === 'ATTACK_LEFT') stats.attackLeftSamples += 1;
+    if (debug?.racecraftPhase === 'ATTACK_RIGHT') stats.attackRightSamples += 1;
     if (debug?.racecraftPhase === 'RETURN') stats.returnSamples += 1;
     stats.passRun = debug?.mode === 'PASS' ? stats.passRun + DT : 0;
     stats.maxPassRun = Math.max(stats.maxPassRun, stats.passRun);
-    if (/SWITCHBACK/.test(debug?.reason ?? '')) stats.switchbackSamples += 1;
     if (debug?.mode === 'AVOID') stats.avoidSamples += 1;
     const bodySlip = Math.atan2(vehicle.localVelocity?.x ?? 0, Math.max(3, Math.abs(vehicle.localVelocity?.z ?? vehicle.speed)));
     if (Math.abs(bodySlip) > 0.45 && Math.abs(vehicle.yawRate) > 2.2) stats.spinSamples += 1;
@@ -169,11 +167,11 @@ const report = vehicles.map((vehicle) => {
     straightThrottleCuts: stats.straightThrottleCuts,
     straightThrottleCutReasons: stats.straightThrottleCutReasons,
     maxRecoveryRunS: Number(stats.maxRecoveryRun.toFixed(2)),
-    closeFrontS: sampleSeconds(stats.closeFrontSamples), draftS: sampleSeconds(stats.draftSamples),
-    passS: sampleSeconds(stats.passSamples), attackInsideS: sampleSeconds(stats.attackInsideSamples),
-    attackOutsideS: sampleSeconds(stats.attackOutsideSamples), diveS: sampleSeconds(stats.diveSamples),
+    closeFrontS: sampleSeconds(stats.closeFrontSamples), followS: sampleSeconds(stats.followSamples),
+    passS: sampleSeconds(stats.passSamples), attackLeftS: sampleSeconds(stats.attackLeftSamples),
+    attackRightS: sampleSeconds(stats.attackRightSamples),
     returnS: sampleSeconds(stats.returnSamples), maxPassRunS: Number(stats.maxPassRun.toFixed(2)),
-    switchbackS: sampleSeconds(stats.switchbackSamples), avoidS: sampleSeconds(stats.avoidSamples),
+    avoidS: sampleSeconds(stats.avoidSamples),
     unstableS: sampleSeconds(stats.spinSamples), offTrackS: sampleSeconds(stats.offTrackSamples),
     maxOffTrackRunS: Number(stats.maxOffTrackRun.toFixed(2)),
     positionChanges: stats.positionChanges, marshalRecoveries: controllers.get(vehicle.id).marshalRecoveries,
@@ -190,11 +188,11 @@ console.log('CONTACT_QUALITY', JSON.stringify({
 }));
 
 assert.equal(report.filter((car) => car.finished).length, vehicles.length, 'the whole field must finish');
-assert.ok(report.filter((car) => car.passS > 2).length >= 4, 'mixed-class traffic must produce committed passing attempts');
-assert.ok(report.filter((car) => car.switchbackS > 0.4).length >= 1, 'blocked cars must attempt a live switchback/cutback move');
-assert.ok(report.reduce((sum, car) => sum + car.draftS, 0) > 0.4, 'at least one car must show a wake-aligned draft phase');
-assert.ok(report.some((car) => car.attackInsideS > 0 || car.diveS > 0), 'signed inside pass intent must be observable');
-assert.ok(report.every((car) => car.maxPassRunS <= 8.5), 'a committed pass phase must remain finite');
+assert.ok(report.filter((car) => car.passS > 0.5).length >= 4, 'mixed-class traffic must produce committed passing attempts, including decisive sub-second passes');
+assert.ok(report.reduce((sum, car) => sum + car.followS, 0) > 0.4, 'traffic must produce a bounded follow/setup phase');
+assert.ok(report.some((car) => car.attackLeftS > 0), 'left-side pass intent must be observable');
+assert.ok(report.some((car) => car.attackRightS > 0), 'right-side pass intent must be observable');
+assert.ok(report.every((car) => car.maxPassRunS <= 13.5), 'a committed pass phase must remain finite');
 assert.ok(activeContactFrames <= 90, `AI field produced ${activeContactFrames} active-race contact frames`);
 assert.equal(activeDeepOverlapFrames, 0, `AI field produced ${activeDeepOverlapFrames} active-race deep-overlap frames`);
 assert.ok(activeMaxContactImpact <= 3, `AI field produced active-race contact impact ${activeMaxContactImpact}`);

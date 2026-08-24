@@ -34,9 +34,11 @@ assert.match(main, /aiDebug\.cycleSelection\(\)/);
 assert.match(main, /cameraRig\.setSpectate\(\)/);
 assert.match(main, /cameraRig\.setFree\(\)/);
 assert.match(main, /cameraRig\.updateFree\(input\.freeCameraRaw\(\), rawDelta\)/);
-assert.match(main, /rlMode === 'hybrid'/);
-assert.match(main, /setTacticalPolicy\(decision\)/);
-assert.match(hud, /RL HYBRID LIVE/);
+assert.doesNotMatch(main, /RLShadowController|stage5_candidate_policy|setTacticalPolicy/);
+assert.match(main, /aiMode: 'DETERMINISTIC_V3'/);
+assert.match(hud, /DETERMINISTIC V3/);
+assert.match(hud, /fixed\(finite\(thought\.requestedClosingSpeedMps/,
+  'AI closing speed must be sanitized as a value, never passed as toFixed precision');
 assert.match(main, /race\.standings\(player\)/);
 assert.match(main, /controllers, aiDebug/);
 for (const token of ['.standings-panel', '.electronics-panel', '.ai-panel', '.driver-cluster', '.gear-cluster', '.motec', '@media (max-width: 640px)']) {

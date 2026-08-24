@@ -14,7 +14,7 @@ vehicle.speed = 30;
 const planner = new FrenetTrajectoryPlanner();
 const decisive = planner.plan({
   vehicle, track, desiredOffset: 4.2, fallbackOffsets: [0], targetSpeed: 34,
-  aggression: 0.8, racecraftPhase: 'ATTACK_OUTSIDE', roadMargin: 5.3, lookAhead: 24
+  aggression: 0.8, racecraftPhase: 'ATTACK_LEFT', roadMargin: 5.3, lookAhead: 24
 });
 
 assert.equal(decisive.points.length, 24, 'planner must publish a complete fixed-size trajectory');
@@ -39,12 +39,16 @@ blocker.velocity.z = blocker.forward.z * 18;
 blocker.speed = 18;
 const blocked = planner.plan({
   vehicle, track, desiredOffset: 4.2, fallbackOffsets: [-4.2, 0], targetSpeed: 34,
-  aggression: 0.8, racecraftPhase: 'ATTACK_OUTSIDE', roadMargin: 5.3, lookAhead: 24,
+  aggression: 0.8, racecraftPhase: 'PACE', roadMargin: 5.3, lookAhead: 24,
   trafficEntries: [{
     other: blocker, delta: 12, lateralDelta: 4.2, longitudinal: 12, side: 4.2,
+    otherLateral: 4.2, otherTargetLateral: 4.2,
     relativeLongitudinalVelocity: 12, relativeLateralVelocity: 0
   }]
 });
+console.log('BLOCKED_PLAN', JSON.stringify({ selectedOffset: blocked.selectedOffset,
+  collisionFree: blocked.collisionFree, roadLegal: blocked.roadLegal,
+  minimumClearanceM: blocked.minimumClearanceM, candidateCount: blocked.candidateCount }));
 assert.ok(blocked.collisionFree, 'candidate scorer must reject the occupied pass corridor');
 assert.ok(blocked.selectedOffset < 1, 'candidate scorer must choose a materially different safe corridor');
 assert.ok(blocked.candidateCount >= 6, 'planner must evaluate multiple complete trajectories');

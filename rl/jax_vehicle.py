@@ -23,6 +23,10 @@ def load_track(path: Path | None = None, reference_path: Path | None = None) -> 
     payload = json.loads((path or Path(__file__).parent / "track_profile.json").read_text(encoding="utf-8"))
     samples = payload["samples"]
     target_speed = np.asarray([sample["targetSpeedMps"] for sample in samples], dtype=np.float32)
+    reference_line = np.zeros_like(target_speed)
+    reference_throttle = np.zeros_like(target_speed)
+    reference_brake = np.zeros_like(target_speed)
+    reference_ers = np.zeros_like(target_speed)
     if reference_path is not None:
         reference = json.loads(reference_path.read_text(encoding="utf-8"))
         if not reference.get("complete", False):
@@ -32,14 +36,36 @@ def load_track(path: Path | None = None, reference_path: Path | None = None) -> 
             raise ValueError(f"Reference lap has too few samples: {reference_path}")
         reference_s = np.asarray([sample["s"] for sample in reference_samples], dtype=np.float64)
         reference_speed = np.asarray([sample["speed"] for sample in reference_samples], dtype=np.float64)
+        reference_lateral = np.asarray([sample.get("lateral", 0.0) for sample in reference_samples], dtype=np.float64)
+        reference_throttle_samples = np.asarray([sample.get("throttle", 0.0) for sample in reference_samples], dtype=np.float64)
+        reference_brake_samples = np.asarray([sample.get("brake", 0.0) for sample in reference_samples], dtype=np.float64)
+        reference_soc = np.asarray([sample.get("ersSoc", 0.0) for sample in reference_samples], dtype=np.float64)
         order = np.argsort(reference_s)
         reference_s = reference_s[order]
         reference_speed = reference_speed[order]
+        reference_lateral = reference_lateral[order]
+        reference_throttle_samples = reference_throttle_samples[order]
+        reference_brake_samples = reference_brake_samples[order]
+        reference_soc = reference_soc[order]
         unique_s, unique_index = np.unique(reference_s, return_index=True)
         reference_speed = reference_speed[unique_index]
+        reference_lateral = reference_lateral[unique_index]
+        reference_throttle_samples = reference_throttle_samples[unique_index]
+        reference_brake_samples = reference_brake_samples[unique_index]
+        reference_soc = reference_soc[unique_index]
         track_s = np.asarray([sample.get("s", index / len(samples) * payload["lengthM"])
                               for index, sample in enumerate(samples)], dtype=np.float64)
         target_speed = np.interp(track_s, unique_s, reference_speed, period=float(payload["lengthM"])).astype(np.float32)
+        reference_line = np.interp(track_s, unique_s, reference_lateral, period=float(payload["lengthM"])).astype(np.float32)
+        reference_throttle = np.interp(track_s, unique_s, reference_throttle_samples,
+                                       period=float(payload["lengthM"])).astype(np.float32)
+        reference_brake = np.interp(track_s, unique_s, reference_brake_samples,
+                                    period=float(payload["lengthM"])).astype(np.float32)
+        interpolated_soc = np.interp(track_s, unique_s, reference_soc, period=float(payload["lengthM"])).astype(np.float32)
+        # Positive values represent a human deployment request.  Harvesting is
+        # handled by the deterministic hybrid controller, not learned as a
+        # negative tactical action.
+        reference_ers = np.clip((interpolated_soc - np.roll(interpolated_soc, -1)) * 95.0, 0.0, 1.0)
         # Remove one-frame recording noise without erasing real braking zones.
         radius = 3
         padded = np.concatenate((target_speed[-radius:], target_speed, target_speed[:radius]))
@@ -48,6 +74,10 @@ def load_track(path: Path | None = None, reference_path: Path | None = None) -> 
         "length": float(payload["lengthM"]),
         "curvature": jnp.asarray([sample["curvature"] for sample in samples], dtype=jnp.float32),
         "target_speed": jnp.asarray(target_speed, dtype=jnp.float32),
+        "reference_line": jnp.asarray(reference_line, dtype=jnp.float32),
+        "reference_throttle": jnp.asarray(reference_throttle, dtype=jnp.float32),
+        "reference_brake": jnp.asarray(reference_brake, dtype=jnp.float32),
+        "reference_ers": jnp.asarray(reference_ers, dtype=jnp.float32),
     }
 
 
@@ -55,6 +85,13 @@ def track_lookup(progress: jax.Array, track: dict[str, jax.Array | float]) -> tu
     count = track["curvature"].shape[0]
     index = jnp.floor(jnp.mod(progress, track["length"]) / track["length"] * count).astype(jnp.int32)
     return track["curvature"][index], track["target_speed"][index]
+
+
+def reference_lookup(progress: jax.Array, track: dict[str, jax.Array | float]):
+    count = track["curvature"].shape[0]
+    index = jnp.floor(jnp.mod(progress, track["length"]) / track["length"] * count).astype(jnp.int32)
+    return (track["reference_line"][index], track["reference_throttle"][index],
+            track["reference_brake"][index], track["reference_ers"][index])
 
 
 def reduced_step(state: jax.Array, action: jax.Array, curvature: jax.Array, nominal_target_speed: jax.Array) -> StepResult:

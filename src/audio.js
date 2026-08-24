@@ -103,10 +103,10 @@ export class SynthAudio {
     this.gearOscillator = this._continuousOscillator(context, 'triangle', 140, this.gearGain, gearFilter);
 
     const electricFilter = context.createBiquadFilter();
-    electricFilter.type = 'bandpass'; electricFilter.frequency.value = 980; electricFilter.Q.value = 0.72;
+    electricFilter.type = 'bandpass'; electricFilter.frequency.value = 720; electricFilter.Q.value = 0.48;
     electricFilter.connect(this.master);
     this.ersGain = this._gain(context);
-    this.ersOscillator = this._continuousOscillator(context, 'sine', 310, this.ersGain, electricFilter);
+    this.ersOscillator = this._continuousOscillator(context, 'triangle', 220, this.ersGain, electricFilter);
     this.regenGain = this._gain(context);
     this.regenOscillator = this._continuousOscillator(context, 'triangle', 180, this.regenGain, electricFilter);
     this.pitLimiterGain = this._gain(context);
@@ -142,10 +142,10 @@ export class SynthAudio {
     const regenPowerW = Math.max(0, finite(ers.regenPowerW, finite(vehicle.regenPowerW)));
     const deployFactor = clamp(deployPowerW / 150000, 0, 1);
     const regenFactor = clamp(regenPowerW / 150000, 0, 1);
-    this.ersOscillator.frequency.setTargetAtTime(290 + deployFactor * 1150 + rpmFactor * 150, time, 0.045);
-    this.ersGain.gain.setTargetAtTime(0.0001 + deployFactor * (0.012 + throttle * 0.016), time, 0.055);
-    this.regenOscillator.frequency.setTargetAtTime(155 + regenFactor * 690 + speedFactor * 85, time, 0.04);
-    this.regenGain.gain.setTargetAtTime(0.0001 + regenFactor * 0.022, time, 0.045);
+    this.ersOscillator.frequency.setTargetAtTime(185 + deployFactor * 570 + rpmFactor * 80, time, 0.06);
+    this.ersGain.gain.setTargetAtTime(0.0001 + deployFactor * (0.009 + throttle * 0.011), time, 0.07);
+    this.regenOscillator.frequency.setTargetAtTime(125 + regenFactor * 380 + speedFactor * 55, time, 0.055);
+    this.regenGain.gain.setTargetAtTime(0.0001 + regenFactor * 0.016, time, 0.06);
 
     const wheels = safeArray(vehicle.wheels);
     const tyreSlip = wheels.length ? Math.max(0, ...wheels.map((wheel) => finite(wheel?.slip))) : 0;
@@ -208,14 +208,14 @@ export class SynthAudio {
   }
 
   _impact(intensity) { this._oneShot('triangle', 95 + intensity * 90, 0.14 * intensity, 0.16); }
-  _curbRumble(intensity) { this._oneShot('sine', 62 + intensity * 48, 0.065 * intensity, 0.13, 0.55); }
+  _curbRumble(intensity) { this._oneShot('triangle', 54 + intensity * 38, 0.052 * intensity, 0.13, 0.55); }
   _pop(intensity) { this._oneShot('square', 145 + intensity * 130, 0.034 * intensity, 0.075); }
   _shift(upshift, intensity) {
-    this._oneShot(upshift ? 'square' : 'sawtooth', upshift ? 780 : 430, 0.027 * intensity, upshift ? 0.052 : 0.085, upshift ? 0.62 : 0.28);
-    this._oneShot('sine', upshift ? 190 : 145, 0.019 * intensity, 0.07, upshift ? 0.42 : 0.24);
+    this._oneShot(upshift ? 'triangle' : 'sawtooth', upshift ? 440 : 330, 0.021 * intensity, upshift ? 0.06 : 0.085, upshift ? 0.56 : 0.28);
+    this._oneShot('triangle', upshift ? 165 : 125, 0.015 * intensity, 0.075, upshift ? 0.42 : 0.24);
   }
   _ambientHorn() { this._oneShot('sawtooth', 355, 0.015, 0.32, 0.98); }
-  _marshalWarning() { this._oneShot('square', 660, 0.010, 0.21, 0.76); }
+  _marshalWarning() { this._oneShot('triangle', 410, 0.008, 0.21, 0.76); }
   _tracksidePA() { this._oneShot('triangle', 235, 0.008, 0.48, 0.71); }
 
   toggleMute() {
