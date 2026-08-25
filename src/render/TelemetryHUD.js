@@ -346,7 +346,7 @@ export class TelemetryHUD {
       </div>
 
       <div class="ai-cost-table-panel">
-        <div class="ai-table-title">FRENET LATTICE TRAJECTORY COST MATRIX (24 CANDIDATES)</div>
+        <div class="ai-table-title">PREDICTIVE TRAJECTORY COST MATRIX (24 CANDIDATES)</div>
         <table class="ai-cost-table">
           <thead>
             <tr>
@@ -828,5 +828,4 @@ export class TelemetryHUD {
     this.root = null;
   }
 }
-
 

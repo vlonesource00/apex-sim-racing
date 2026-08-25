@@ -8,7 +8,7 @@ const finite = (val, fallback = 0) => (Number.isFinite(val) ? val : fallback);
 /**
  * AIDebugSuiteRenderer
  * Master coordinator for the 3D Visual AI Debug Suite & Telemetry Overlays.
- * Unifies Frenet candidate lattice ribbons, tactical opponent prediction cones,
+ * Unifies predictive candidate ribbons, tactical opponent prediction cones,
  * track surface corridor highlights, dynamic divebomb/braking markers,
  * 3D floating thought sprites, and live G-G friction circle HUD.
  */
@@ -28,9 +28,9 @@ export class AIDebugSuiteRenderer {
       predictionCones: true,
       tacticalCorridors: true,
       brakingPoint: true,
-      thoughtLabel: true,
+      thoughtLabel: false,
       ggCircle: true,
-      hud: true
+      hud: false
     };
 
     // Sub-components
@@ -383,7 +383,7 @@ export class AIDebugSuiteRenderer {
     const payload = {
       version: 2,
       exportedAt: new Date().toISOString(),
-      track: this.track?.name || 'Endurance Park',
+      track: this.track?.name || 'Harbor Ring',
       totalIncidents: this.incidents.length,
       incidents: this.incidents
     };
@@ -524,5 +524,3 @@ export class AIDebugSuiteRenderer {
     this.group.removeFromParent();
   }
 }
-
-

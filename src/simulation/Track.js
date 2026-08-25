@@ -113,9 +113,12 @@ export class Circuit {
       const ds = Math.max(0.1, Math.hypot(next.x - prev.x, next.z - prev.z));
       point.grade = clamp(Math.atan2(next.y - prev.y, ds), -0.22, 0.22);
       const fraction = point.s / this.length;
+      const isFlatProfile = this.scenario?.elevation?.profile === 'flat';
       const bankHint = (this.scenario?.bankHints ?? []).find((hint) => fraction >= hint.fromFraction && fraction <= hint.toFraction);
       const authoredBank = bankHint?.bankRadians ?? Math.sin(point.s * 0.026 + 0.6) * 0.045;
-      point.bank = clamp(authoredBank + point.turnSign * point.turnStrength * 0.17, -0.22, 0.22);
+      point.bank = isFlatProfile
+        ? 0
+        : clamp(authoredBank + point.turnSign * point.turnStrength * 0.17, -0.22, 0.22);
       point.normal3 = normal3For(point.tangent, point.normal, point.grade, point.bank);
     }
     this.rubber = new Float32Array(points.length);
@@ -128,13 +131,43 @@ export class Circuit {
   _segmentFor(distance) {
     const s = wrap(distance, this.length);
     const points = this.samples;
-    let index = 0;
-    while (index < points.length - 1 && points[index + 1].s <= s) index += 1;
+    // Samples are authored in monotonically increasing longitudinal order.
+    // Keep the exact old bracketing rule (the last sample whose s is <= the
+    // wrapped distance), but use a bounded binary search instead of walking
+    // from the start of the circuit for every AI query.
+    let low = 0;
+    let high = points.length - 1;
+    while (low < high) {
+      const middle = Math.ceil((low + high) * 0.5);
+      if (points[middle].s <= s) low = middle;
+      else high = middle - 1;
+    }
+    const index = low;
     const a = points[index];
     const b = points[(index + 1) % points.length];
     const nextS = index === points.length - 1 ? this.length : b.s;
     const t = clamp((s - a.s) / Math.max(0.001, nextS - a.s), 0, 1);
     return { a, b, index, t, s };
+  }
+
+  /**
+   * Interpolate only the scalar geometry used by the pace envelope. This is
+   * intentionally separate from atDistance(): no tangent/normal/normal3 or
+   * rubber lookup is needed by that calculation.
+   */
+  scalarAtDistance(distance) {
+    const { a, b, index, t, s } = this._segmentFor(distance);
+    return {
+      s,
+      index,
+      t,
+      curvature: a.curvature + (b.curvature - a.curvature) * t,
+      turnSign: a.turnSign,
+      curbSide: a.curbSide,
+      turnStrength: a.turnStrength + (b.turnStrength - a.turnStrength) * t,
+      grade: a.grade + (b.grade - a.grade) * t,
+      bank: a.bank + (b.bank - a.bank) * t
+    };
   }
 
   atDistance(distance) {
@@ -172,13 +205,17 @@ export class Circuit {
    * a fixed, unnecessarily narrow corridor.
    */
   planningLateralLimit(distance, side = 0, { halfWidthM = 1.02, safetyM = 0.16 } = {}) {
-    const point = this.atDistance(distance);
+    return this.planningLateralLimitAtPoint(this.atDistance(distance), side, { halfWidthM, safetyM });
+  }
+
+  planningLateralLimitAtPoint(point, side = 0, { halfWidthM = 1.02, safetyM = 0.16 } = {}) {
+    const sampledPoint = point ?? {};
     const roadLimit = Math.max(1.8, this.roadHalfWidth - halfWidthM - safetyM);
     const signedSide = Math.sign(finiteNumber(side));
-    const onAuthoredKerbSide = signedSide !== 0 && signedSide === Math.sign(finiteNumber(point.curbSide));
+    const onAuthoredKerbSide = signedSide !== 0 && signedSide === Math.sign(finiteNumber(sampledPoint.curbSide));
     const usableKerb = onAuthoredKerbSide
       ? Math.min(0.42, this.curbWidth * 0.32)
-      : point.turnStrength < 0.12 ? Math.min(0.12, this.curbWidth * 0.1) : 0;
+      : finiteNumber(sampledPoint.turnStrength) < 0.12 ? Math.min(0.12, this.curbWidth * 0.1) : 0;
     return roadLimit + usableKerb;
   }
 
@@ -310,8 +347,8 @@ export class Circuit {
   }
 
   targetSpeed(distance, skill = 1) {
-    const current = this.atDistance(distance);
-    const ahead = this.atDistance(distance + 25);
+    const current = this.scalarAtDistance(distance);
+    const ahead = this.scalarAtDistance(distance + 25);
     const bend = Math.max(current.curvature, ahead.curvature);
     const banking = 1 + Math.abs(Math.sin(current.bank)) * 0.34;
     const gradeFactor = clamp(1 - current.grade * 0.22, 0.9, 1.08);

@@ -161,6 +161,9 @@ export class RaceState {
   gridPosition(index) {
     const lane = index % 2 === 0 ? -2.35 : 2.35;
     const row = Math.floor(index / 2);
-    return { distance: wrap(-row * 7.4 - (index % 2) * 1.1, this.track.length), lateral: lane };
+    // Leave enough longitudinal room for a full-lock launch jink around a
+    // stalled row ahead. The previous 7.4 m pitch provided barely two metres
+    // beyond the cars' combined body length and guaranteed a grid pile-up.
+    return { distance: wrap(-row * 15.5 - (index % 2) * 1.3, this.track.length), lateral: lane };
   }
 }

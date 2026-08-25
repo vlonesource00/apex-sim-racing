@@ -1071,7 +1071,7 @@ def build_props(collection, mat):
     sphere('TREE_CROWN_LOW', collection, blender_location(0, 3.45, 0), (1.35, 1.6, 1.35), mat['foliage'], tree, subdivisions=2)
     sphere('TREE_CROWN_HIGH', collection, blender_location(0.28, 4.65, -0.12), (1.0, 1.2, 1.0), mat['foliage'], tree, subdivisions=2)
 
-    # Endurance-landmark kit. These roots are intentionally separate so runtime
+    # Circuit-landmark kit. These roots are intentionally separate so runtime
     # scenarios can clone them independently instead of loading bespoke GLBs.
     control_tower = empty('PROP_CONTROL_TOWER', collection)
     box('CONTROL_TOWER_CORE', collection, blender_location(0, 5.8, 0), blender_size(9.2, 11.6, 8.4), mat['concrete'], control_tower, bevel=0.13)

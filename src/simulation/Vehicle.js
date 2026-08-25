@@ -135,6 +135,7 @@ export class Vehicle {
     this._resetWake();
     this._resetERS();
     this.wheels = this._makeWheels();
+    this._collisionHalfExtents();
     if (!initial) this.place(this.position.x, this.position.z, this.yaw, this.position.y);
     return this.spec;
   }

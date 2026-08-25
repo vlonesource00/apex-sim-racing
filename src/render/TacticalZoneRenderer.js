@@ -19,6 +19,9 @@ const CORRIDOR_COLORS = {
   ATTACK_OUTSIDE: { base: new THREE.Color(0x00d4ff), top: new THREE.Color(0x80d8ff) },
   DIVEBOMB: { base: new THREE.Color(0xff1744), top: new THREE.Color(0xff5252) },
   SWITCHBACK: { base: new THREE.Color(0xffea00), top: new THREE.Color(0xffff00) },
+  SIDE_BY_SIDE: { base: new THREE.Color(0x00ff88), top: new THREE.Color(0xb2ff59) },
+  GRID_BYPASS: { base: new THREE.Color(0x00e5ff), top: new THREE.Color(0x69f0ae) },
+  OBSTACLE_BYPASS: { base: new THREE.Color(0x00e676), top: new THREE.Color(0xb2ff59) },
   APEX_SHIELD: { base: new THREE.Color(0xd500f9), top: new THREE.Color(0xff4081) },
   DIAMOND_DEFENSE: { base: new THREE.Color(0x7c4dff), top: new THREE.Color(0xb388ff) },
   EXIT_SQUEEZE: { base: new THREE.Color(0xff3d00), top: new THREE.Color(0xff6e40) },
@@ -29,8 +32,11 @@ const CORRIDOR_COLORS = {
   DEFEND_RIGHT: { base: new THREE.Color(0xd500f9), top: new THREE.Color(0x7c4dff) },
   DEFEND_INSIDE: { base: new THREE.Color(0xaa00ff), top: new THREE.Color(0xe040fb) },
   BREAK_TOW: { base: new THREE.Color(0xff6d00), top: new THREE.Color(0xffab00) },
+  DOOR_SHUT: { base: new THREE.Color(0xd500f9), top: new THREE.Color(0xff4081) },
   DEFEND: { base: new THREE.Color(0xf05cff), top: new THREE.Color(0xe040fb) },
   RETURN: { base: new THREE.Color(0xffab00), top: new THREE.Color(0xffd740) },
+  SAFE_REJOIN: { base: new THREE.Color(0xffab00), top: new THREE.Color(0xffd740) },
+  DEFENSE_RELEASE: { base: new THREE.Color(0xffab00), top: new THREE.Color(0xffd740) },
   DEFAULT: { base: new THREE.Color(0x00e5ff), top: new THREE.Color(0x18ffff) }
 };
 
@@ -194,12 +200,13 @@ export class TacticalZoneRenderer {
     const height = this.carDimensions.height;
 
     // Opponent entries from traffic scan or direct vehicle list
-    const trafficEntries = traffic?.entries ?? [];
+    const trafficEntries = traffic?.entries
+      ?? vehicles.map((other) => ({ other }));
     let processedCount = 0;
 
     for (const entry of trafficEntries) {
       if (processedCount >= MAX_OPPONENTS) break;
-      const other = entry.other;
+      const other = entry.other?.vehicle ?? entry.other;
       if (!other || other === egoVehicle || other.finished || other.despawned || other.trafficGhost) continue;
 
       const otherDist = finite(other.distance);
@@ -308,11 +315,15 @@ export class TacticalZoneRenderer {
     const thought = state.thought ?? {};
     const phase = tactical.racecraftPhase ?? tactical.passPhase ?? state.mode ?? 'PACE';
 
-    const isAttack = ['ATTACK_LEFT', 'ATTACK_RIGHT', 'ATTACK_INSIDE', 'ATTACK_OUTSIDE', 'DIVEBOMB', 'SWITCHBACK'].includes(phase)
-      || ['ATTACK_LEFT', 'ATTACK_RIGHT', 'ATTACK_INSIDE', 'ATTACK_OUTSIDE', 'DIVEBOMB', 'SWITCHBACK'].includes(thought.deployedManeuver);
-    const isDefend = ['DEFEND_LEFT', 'DEFEND_RIGHT', 'DEFEND_INSIDE', 'BREAK_TOW', 'DEFEND'].includes(phase)
+    const attackPhases = ['ATTACK_LEFT', 'ATTACK_RIGHT', 'ATTACK_INSIDE', 'ATTACK_OUTSIDE',
+      'DIVEBOMB', 'SWITCHBACK', 'SIDE_BY_SIDE', 'GRID_BYPASS', 'OBSTACLE_BYPASS'];
+    const defensePhases = ['DEFEND_LEFT', 'DEFEND_RIGHT', 'DEFEND_INSIDE', 'BREAK_TOW',
+      'DEFEND', 'DOOR_SHUT', 'APEX_SHIELD', 'EXIT_SQUEEZE'];
+    const returnPhases = ['RETURN', 'CLEAR', 'SAFE_REJOIN', 'DEFENSE_RELEASE', 'ABORT'];
+    const isAttack = attackPhases.includes(phase) || attackPhases.includes(thought.deployedManeuver);
+    const isDefend = defensePhases.includes(phase)
       || tactical.defending || thought.defending;
-    const isReturn = phase === 'RETURN';
+    const isReturn = returnPhases.includes(phase);
 
     if (!isAttack && !isDefend && !isReturn) {
       this.corridorMesh.visible = false;
@@ -467,5 +478,4 @@ export class TacticalZoneRenderer {
     this.group.removeFromParent();
   }
 }
-
 

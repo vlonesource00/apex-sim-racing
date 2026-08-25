@@ -25,7 +25,7 @@ const finite = (val, fallback = 0) => (Number.isFinite(val) ? val : fallback);
 const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
 
 /**
- * 3D Multi-Candidate Frenet Trajectory Lattice Renderer
+ * 3D multi-candidate trajectory renderer.
  * Visualizes the chosen trajectory as a glowing 3D ribbon with vertex speed coloring
  * and alternate candidates as semi-transparent lines categorized by viability.
  */
@@ -500,5 +500,4 @@ export class CandidateSplineRenderer {
     this.group.removeFromParent();
   }
 }
-
 

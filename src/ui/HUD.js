@@ -67,6 +67,10 @@ export class HUD {
 
       <section class="hud-panel ai-panel" data-role="ai-panel">
         <header><b>AI PLANNER // F3 · FIELD F4</b><span data-role="ai-selection">N NEXT AI</span><span data-role="ai-field">SELECTED</span></header>
+        <div class="ai-field-roster" data-role="ai-field-roster">
+          <div class="ai-field-legend"><span>FIELD ROSTER</span><span><i class="ai-legend-dot race"></i>RACE <i class="ai-legend-dot pass"></i>PASS <i class="ai-legend-dot defend"></i>DEFEND <i class="ai-legend-dot recover"></i>RECOVER</span></div>
+          <div class="ai-roster-list" data-role="ai-roster-list"></div>
+        </div>
         <div class="ai-driver"><strong data-role="ai-name">—</strong><span data-role="ai-class">—</span></div>
         <div class="ai-intent"><b data-role="ai-mode">OFF</b><span data-role="ai-reason">DEBUG DISARMED</span></div>
         <div class="ai-grid">
@@ -116,10 +120,9 @@ export class HUD {
         <span>TOW <b data-role="tow">0%</b></span><span>DIRTY <b data-role="dirty">0%</b></span>
         <span>PIT <b data-role="pit">NONE</b></span>
         <span>STEER <b data-role="steer">—</b></span><span>G <b data-role="gforce">0.00</b></span>
-        <span>REF <b data-role="reference">IDLE</b></span>
       </div>
 
-      <div class="help">WASD / ARROWS DRIVE · SPACE HANDBRAKE · C CAMERA · T TELEMETRY · P PIT REQUEST<br>G AUTO/MANUAL · , DOWNSHIFT · . UPSHIFT · [ / ] TC · ; / ' ABS · B BRAKE BIAS · E ERS · R RESET · M MUTE · F3 AI DEBUG · F4 FIELD · N NEXT AI · F5 SPECTATE · F6 NO-CLIP · F7 REFERENCE LAP</div>
+      <div class="help">WASD / ARROWS DRIVE · SPACE HANDBRAKE · C CAMERA · T TELEMETRY · P PIT REQUEST<br>G AUTO/MANUAL · , DOWNSHIFT · . UPSHIFT · [ / ] TC · ; / ' ABS · B BRAKE BIAS · E ERS · R RESET · M MUTE · F3 AI DEBUG · F4 FIELD · N NEXT AI · F5 SPECTATE · F6 NO-CLIP</div>
       <button class="mute" data-role="mute" type="button">AUDIO: ON</button>
 
       <div class="finish" data-role="finish">
@@ -130,6 +133,7 @@ export class HUD {
     this.wheelNodes = new Map([...this.root.querySelectorAll('[data-wheel]')].map((node) => [node.dataset.wheel, node]));
     this._standingsSignature = null;
     this._standingsLastRenderAt = Number.NEGATIVE_INFINITY;
+    this._aiFieldSignature = null;
     this.$('mute').addEventListener('click', () => this.setMuted(onMute?.() ?? false));
   }
 
@@ -175,11 +179,15 @@ export class HUD {
   _updateAIDebug(snapshot) {
     const state = snapshot?.state?.vehicleId ? snapshot.state : snapshot?.vehicleId ? snapshot : null;
     const enabled = Boolean(snapshot?.enabled);
-    this.$('ai-panel').classList.toggle('show', enabled);
-    if (!enabled) return;
+    const fieldView = Boolean(snapshot?.fieldView);
+    const textPanelEnabled = enabled && Boolean(snapshot?.textPanelEnabled);
+    this.$('ai-panel').classList.toggle('show', textPanelEnabled);
+    this.$('ai-panel').classList.toggle('field-mode', fieldView);
+    if (!textPanelEnabled) return;
     const now = globalThis.performance?.now?.() ?? Date.now();
     if (now - (this._aiDebugLastRenderAt ?? -Infinity) < 100) return;
     this._aiDebugLastRenderAt = now;
+    if (!fieldView) {
     this.$('ai-name').textContent = snapshot.selectedName ?? state?.name ?? '—';
     this.$('ai-class').textContent = String(state?.classKey ?? state?.class ?? '—').toUpperCase();
     this.$('ai-mode').textContent = state?.mode ?? 'WAIT';
@@ -218,8 +226,39 @@ export class HUD {
     this.$('ai-rejection').textContent = thought.abortReason ?? thought.waitReason ?? state?.abortReason ?? state?.waitReason ?? 'NONE';
     this.$('ai-energy').textContent = `CLOSE ${fixed(finite(thought.requestedClosingSpeedMps))}M/S · GAIN ${fixed(thought.predictedTimeGainS, 2)}S`;
     this.$('ai-skill').textContent = state ? `SKILL ${Math.round(finite(state.skill) * 100)} · AGG ${Math.round(finite(state.aggression) * 100)}` : 'SKILL — · AGG —';
+    }
     this.$('ai-selection').textContent = 'N NEXT AI';
-    this.$('ai-field').textContent = snapshot.fieldView ? 'FIELD' : 'SELECTED';
+    this.$('ai-field').textContent = fieldView ? 'FIELD' : 'SELECTED';
+
+    if (fieldView) {
+      const cars = Array.isArray(snapshot.fieldCars) ? snapshot.fieldCars : [];
+      const signature = JSON.stringify(cars.map((car) => [
+        car.id, car.name, car.mode, car.phase, car.target, car.safe,
+        finite(car.clearance), finite(car.speed), finite(car.targetSpeed), car.selected, car.color
+      ]));
+      if (signature !== this._aiFieldSignature) {
+        this.$('ai-roster-list').innerHTML = cars.map((car) => {
+          const safe = Boolean(car.safe);
+          const mode = String(car.mode ?? 'WAIT').toUpperCase();
+          const phase = String(car.phase ?? mode).toUpperCase();
+          const target = car.target == null ? 'CLEAR' : String(car.target).toUpperCase();
+          const clearance = finite(car.clearance, 99).toFixed(1);
+          const speed = (finite(car.speed) * 3.6).toFixed(0);
+          const targetSpeed = (finite(car.targetSpeed) * 3.6).toFixed(0);
+          return `<div class="ai-roster-row${car.selected ? ' selected' : ''}" style="--ai-mode:${escapeHtml(car.color ?? '#35e6ed')}">
+            <b class="ai-roster-select">${car.selected ? '▸' : '·'}</b><i class="ai-mode-badge"></i><strong>${escapeHtml(car.name ?? car.id)}</strong><span class="ai-roster-mode">${escapeHtml(mode)}</span><span class="ai-roster-phase">${escapeHtml(phase)}</span><span class="ai-roster-target">${escapeHtml(target)}</span><span class="ai-roster-speed">${speed}/${targetSpeed}</span><em class="ai-roster-safe ${safe ? 'ok' : 'warn'}">${safe ? 'SAFE' : 'BLOCK'} ${clearance}M</em>
+          </div>`;
+        }).join('') || '<div class="ai-roster-empty">FIELD DATA PENDING</div>';
+        this._aiFieldSignature = signature;
+      }
+      // Field mode is intentionally roster-only. The selected-car thought
+      // stack remains available in F3 and is hidden here to keep the driving
+      // view and DOM paint budget compact.
+      return;
+    } else if (this._aiFieldSignature !== null) {
+      this.$('ai-roster-list').innerHTML = '';
+      this._aiFieldSignature = null;
+    }
   }
 
   update(vehicle, status, perf, cameraMode, raceActive = true, context = {}) {
@@ -262,11 +301,6 @@ export class HUD {
     this.$('steer').textContent = vehicle.steering > 0.012 ? 'L' : vehicle.steering < -0.012 ? 'R' : '—';
     const g = Math.hypot(finite(vehicle.localAcceleration?.x), finite(vehicle.localAcceleration?.z)) / 9.81;
     this.$('gforce').textContent = g.toFixed(2);
-    const reference = context?.referenceLap;
-    this.$('reference').textContent = reference?.recording
-      ? reference.armed ? 'ARMED' : `REC ${reference.samples}`
-      : reference?.lastExport?.complete ? `${finite(reference.lastExport.durationS).toFixed(1)}S` : 'IDLE';
-
     const electronics = vehicle.electronics ?? {};
     this.$('tc').textContent = electronics.tcLevel ?? 0;
     this.$('abs').textContent = electronics.absLevel ?? 0;

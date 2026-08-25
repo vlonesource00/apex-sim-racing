@@ -4,7 +4,7 @@ import { Circuit } from './simulation/Track.js';
 import { Vehicle } from './simulation/Vehicle.js';
 import { updateAerodynamicWakes, resolveVehicleCollisions } from './simulation/VehicleInteractions.js';
 import { carClassSummaries } from './simulation/CarSpecs.js';
-import { AIController } from './simulation/AI.js';
+import { AIRaceDirector } from './ai/AIRaceDirector.js';
 import { RaceState } from './simulation/Race.js';
 import { CircuitEnvironment } from './render/Environment.js';
 import { CarVisual } from './render/CarVisual.js';
@@ -14,12 +14,11 @@ import { CameraRig } from './render/Cameras.js';
 import { InputManager } from './input.js';
 import { SynthAudio } from './audio.js';
 import { HUD } from './ui/HUD.js';
-import { ENDURANCE_PARK } from './scenarios/EndurancePark.js';
-import { EnduranceScenarioVisuals } from './render/EnduranceScenarioVisuals.js';
+import { HARBOR_RING } from './scenarios/HarborRing.js';
+import { CircuitScenarioVisuals } from './render/CircuitScenarioVisuals.js';
 import { PitSystem, PIT_STATES, applyPitIntentToControls } from './simulation/PitSystem.js';
 import { PassQualityTracker } from './simulation/PassQuality.js';
-import { ReferenceLapRecorder } from './telemetry/ReferenceLapRecorder.js';
-import { ReferenceLapProfile } from './telemetry/ReferenceLapProfile.js';
+import { orderVehiclesByClassPace } from './simulation/GridOrder.js';
 
 const FIXED_TIMESTEP = 1 / 120;
 const MAX_STEPS_PER_FRAME = 14;
@@ -43,7 +42,10 @@ app.append(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.035, 1800);
-const track = new Circuit(ENDURANCE_PARK);
+const ACTIVE_SCENARIO = HARBOR_RING;
+document.documentElement.dataset.scenarioId = ACTIVE_SCENARIO.id;
+document.documentElement.dataset.scenarioName = ACTIVE_SCENARIO.name;
+const track = new Circuit(ACTIVE_SCENARIO);
 const environment = new CircuitEnvironment(scene, track);
 const paint = ['#e85038', '#3378a8', '#e1ad31', '#8f44a5', '#25a176', '#dbd8d0', '#e15d93', '#2c4d89', '#df742d'];
 const driverNames = ['MARTIM', 'VEGA', 'KLINE', 'SATO', 'ROWE', 'MORA', 'NAKAMURA', 'BELL', 'LUCAS'];
@@ -53,59 +55,21 @@ let selectedClass = gridVariants[0];
 const player = new Vehicle({ id: 'player', name: driverNames[0], color: paint[0], player: true, spec: selectedClass });
 const vehicles = [player];
 for (let i = 1; i <= 8; i += 1) vehicles.push(new Vehicle({ id: `ai-${i}`, name: driverNames[i], color: paint[i], spec: gridVariants[i] }));
-const controllers = new Map(vehicles.slice(1).map((vehicle, index) => [vehicle.id, new AIController(index + 1)]));
+const aiDirector = new AIRaceDirector({ track, vehicles });
+const controllers = aiDirector.agents;
 const race = new RaceState(track, vehicles, 3);
-const pitSystem = new PitSystem(track, vehicles, ENDURANCE_PARK);
+const pitSystem = new PitSystem(track, vehicles, ACTIVE_SCENARIO);
 const passQuality = new PassQualityTracker(track);
-const referenceLapRecorder = new ReferenceLapRecorder();
-let referenceLapProfile = null;
-let referenceLapSource = 'none';
-
-function loadReferenceLap(payload, { source = 'manual' } = {}) {
-  referenceLapProfile = new ReferenceLapProfile(payload);
-  referenceLapSource = source;
-  document.documentElement.dataset.referenceLapSource = source;
-  document.documentElement.dataset.referenceLapTime = String(referenceLapProfile.summary.lapTimeS);
-  for (const controller of controllers.values()) controller.setReferenceProfile(referenceLapProfile);
-  return referenceLapProfile.summary;
-}
-
-function clearReferenceLap() {
-  referenceLapProfile = null;
-  referenceLapSource = 'none';
-  document.documentElement.dataset.referenceLapSource = 'none';
-  delete document.documentElement.dataset.referenceLapTime;
-  for (const controller of controllers.values()) controller.setReferenceProfile(null);
-  return true;
-}
-
-const defaultReferencePromise = fetch('/data/endurance-park-prototype-reference.json')
-  .then((response) => {
-    if (!response.ok) throw new Error(`Reference profile HTTP ${response.status}`);
-    return response.json();
-  })
-  .then((payload) => loadReferenceLap(payload, { source: 'bundled-human-64.300' }))
-  .catch((error) => {
-    console.warn('Default reference profile unavailable; physical fallback pace remains active.', error);
-    return null;
-  });
-
-function compareReferenceLap(payload) {
-  if (!referenceLapProfile) throw new Error('Load a baseline reference lap first');
-  return referenceLapProfile.distanceDeltaReport(payload);
-}
 
 function placeGrid() {
-  vehicles.forEach((vehicle, index) => {
+  orderVehiclesByClassPace(vehicles).forEach((vehicle, index) => {
     const grid = race.gridPosition(index);
     vehicle.resetTo(track, grid.distance, grid.lateral);
   });
 }
 
 function resetAIForRace() {
-  for (const vehicle of vehicles.slice(1)) {
-    controllers.get(vehicle.id)?.resetForRace(vehicle);
-  }
+  aiDirector.reset({ vehicles, track });
 }
 placeGrid();
 race.reset();
@@ -116,7 +80,7 @@ const visuals = vehicles.map((vehicle, index) => {
   return visual;
 });
 const aiDebug = new AIDebugRenderer(scene, track, vehicles, controllers);
-let enduranceVisuals = null;
+let circuitVisuals = null;
 const playerVisual = visuals[0];
 const cameraRig = new CameraRig(camera);
 const loadingScreen = document.querySelector('#loading-screen');
@@ -145,7 +109,7 @@ assets.preload().then((result) => {
   assetsReady = true;
   const attachedCars = visuals.slice(1).filter((visual) => visual.attachAsset(assets)).length;
   const propsInstalled = environment.installAssets(assets);
-  enduranceVisuals ??= new EnduranceScenarioVisuals(scene, track, ENDURANCE_PARK, assets);
+  circuitVisuals ??= new CircuitScenarioVisuals(scene, track, ACTIVE_SCENARIO, assets);
   if (raceStarted) attachPlayerAsset();
   if (loadingMessage) {
     loadingMessage.textContent = result.failed
@@ -180,7 +144,6 @@ function startRace() {
   race.reset();
   pitSystem.reset(vehicles);
   passQuality.reset();
-  referenceLapRecorder.reset();
   input.keyboardDynamics.reset();
   raceStarted = true;
   hud.setRaceActive(true);
@@ -224,16 +187,14 @@ function fixedStep() {
     }
   }
   pitSystem.update(FIXED_TIMESTEP, vehicles);
-  for (const vehicle of vehicles.slice(1)) {
-    controllers.get(vehicle.id).update(vehicle, vehicles, track, race, FIXED_TIMESTEP);
-  }
+  updateAerodynamicWakes(vehicles);
+  const aiCommands = aiDirector.step({ vehicles, track, race, dt: FIXED_TIMESTEP });
+  aiDirector.apply(aiCommands, { vehicles, track });
   for (const vehicle of vehicles) applyPitIntentToControls(vehicle.controls, vehicle.pitIntent);
   const canDrive = race.phase === 'racing';
-  updateAerodynamicWakes(vehicles);
   for (const vehicle of vehicles) vehicle.step(FIXED_TIMESTEP, track, canDrive);
   const collisionStats = resolveVehicleCollisions(vehicles, 3);
   passQuality.update(vehicles, collisionStats, FIXED_TIMESTEP, race.phase === 'racing');
-  referenceLapRecorder.update(FIXED_TIMESTEP, player, track, race);
   race.lastImpact = Math.max(race.lastImpact, collisionStats.maxImpact / 18);
   physicsCounter += 1;
 }
@@ -252,7 +213,6 @@ function processActions() {
     const mode = cameraRig.setFree();
     playerVisual.setCockpitView(mode === 'COCKPIT');
   }
-  if (input.consume('F7') && raceStarted) referenceLapRecorder.toggle(player, track, race);
   if (!raceStarted) return;
   if (input.consume('KeyC')) playerVisual.setCockpitView(cameraRig.toggle() === 'COCKPIT');
   if (input.consume('KeyM')) hud.setMuted(audio.toggleMute());
@@ -291,7 +251,7 @@ function frame(now) {
     visual.update(rawDelta);
   }
   environment.update(rawDelta);
-  enduranceVisuals?.update(rawDelta, vehicles, race);
+  circuitVisuals?.update(rawDelta, vehicles, race);
   aiDebug.update();
   const selectedAI = aiDebug.selectedVehicle();
   if (cameraRig.mode === 'FREE') cameraRig.updateFree(input.freeCameraRaw(), rawDelta);
@@ -310,7 +270,6 @@ function frame(now) {
     aiDebug: aiDebug.snapshot(),
     pit: pitSystem.status(player),
     passQuality: passQuality.snapshot(),
-    referenceLap: referenceLapRecorder.status(),
     spectatedName: cameraRig.mode === 'SPECTATE' ? selectedAI?.name : null
   });
   renderer.render(scene, camera);
@@ -327,12 +286,10 @@ window.addEventListener('resize', () => {
 });
 requestAnimationFrame(frame);
 window.__APEX73__ = {
-  track, vehicles, visuals, environment, assets, metrics, race, controllers, aiDebug, cameraRig, passQuality,
-  interactions: { updateAerodynamicWakes, resolveVehicleCollisions }, pitSystem, scenario: ENDURANCE_PARK, referenceLapRecorder,
-  loadReferenceLap, clearReferenceLap, compareReferenceLap, defaultReferencePromise,
-  get referenceLapProfile() { return referenceLapProfile; }, get referenceLapSource() { return referenceLapSource; },
-  get enduranceVisuals() { return enduranceVisuals; },
-  startRace, selectClass, aiMode: 'GEMINI_GAUNTLET', get raceStarted() { return raceStarted; }
+  track, vehicles, visuals, environment, assets, metrics, race, controllers, aiDirector, aiDebug, cameraRig, passQuality,
+  interactions: { updateAerodynamicWakes, resolveVehicleCollisions }, pitSystem, scenario: ACTIVE_SCENARIO,
+  get circuitVisuals() { return circuitVisuals; },
+  startRace, selectClass, aiMode: 'HEURISTIC_RACE_DIRECTOR', get raceStarted() { return raceStarted; }
 };
 document.documentElement.dataset.apexReady = 'true';
 setTimeout(() => loadingScreen?.classList.add('dismissed'), 650);

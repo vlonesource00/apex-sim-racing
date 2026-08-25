@@ -41,8 +41,15 @@ export class AIDebugRenderer {
     this.group.visible = false;
     this.visible = false;
     this.fieldView = false;
+    // F3/F4 are visual-first views. The legacy telemetry board and floating
+    // thought badges remain available to tooling, but are deliberately not
+    // part of the driving/debugging view because they obscure the race.
+    this.textPanelEnabled = false;
+    this.fieldLabelsEnabled = false;
     this.selectionIndex = 0;
     this.entries = [];
+    this._suiteLastUpdateAt = -Infinity;
+    this._suiteUpdateIntervalMs = 80;
     this._markerGeometry = new THREE.SphereGeometry(0.34, 8, 6);
 
     for (const vehicle of vehicles) {
@@ -84,15 +91,18 @@ export class AIDebugRenderer {
     scene.add(this.group);
     // Gemini's full selected-car laboratory sits beside the lightweight
     // whole-field lines retained for F4.
-    this.geminiSuite = new AIDebugSuiteRenderer(scene, track);
-    this.geminiSuite.setVisible(false);
+    this.selectedSuite = new AIDebugSuiteRenderer(scene, track);
+    this.selectedSuite.setVisible(false);
     this._refreshStyles();
   }
 
   _createThoughtLabel() {
     if (!globalThis.document?.createElement) return null;
     const canvas = document.createElement('canvas');
-    canvas.width = 640; canvas.height = 192;
+    // Field badges are deliberately compact: one readable two-line summary
+    // per car, with the selected vehicle getting a modest emphasis rather
+    // than a full thought paragraph floating over the field.
+    canvas.width = 256; canvas.height = 64;
     const context = canvas.getContext('2d');
     if (!context) return null;
     const texture = new THREE.CanvasTexture(canvas);
@@ -109,40 +119,35 @@ export class AIDebugRenderer {
   _updateThoughtLabel(entry, state, selected, now) {
     if (!entry.label || !entry.labelContext || !state) return;
     const thought = state.thought ?? {};
-    const requested = thought.requestedManeuver ?? state.racecraftPhase ?? 'PACE';
-    const deployed = thought.deployedManeuver && thought.deployedManeuver !== 'NONE'
-      ? thought.deployedManeuver : state.racecraftPhase && state.racecraftPhase !== 'NONE'
-        ? state.racecraftPhase : state.mode ?? 'WAIT';
-    const reason = thought.abortReason ?? thought.waitReason ?? state.abortReason ?? state.waitReason ?? state.reason ?? 'CLEAR';
-    const target = thought.targetId ?? state.passTargetId ?? state.draftTargetId ?? 'CLEAR';
-    const safe = (Boolean(thought.trajectoryCollisionFree ?? state.trajectoryCollisionFree)
-      || Boolean(thought.thresholdSafeTrajectory))
-      && Boolean(thought.trajectoryRoadLegal ?? state.trajectoryRoadLegal);
-    const signature = [entry.vehicle.name, requested, deployed, reason, target, safe,
-      finite(thought.trajectoryMinimumClearanceM, finite(state.trajectoryMinimumClearanceM, 99)).toFixed(1)].join('|');
+    const phase = state.racecraftPhase ?? thought.deployedManeuver ?? state.mode ?? 'PACE';
+    const mode = state.mode ?? 'RACE';
+    const target = thought.targetId ?? state.targetId ?? state.passTargetId ?? state.draftTargetId ?? 'CLEAR';
+    const safe = Boolean(state.trajectoryCollisionFree ?? thought.trajectoryCollisionFree)
+      && Boolean(state.trajectoryRoadLegal ?? thought.trajectoryRoadLegal);
+    const clearance = finite(state.trajectoryMinimumClearanceM, finite(thought.trajectoryMinimumClearanceM, 99));
+    const signature = [entry.vehicle.name, mode, phase, target, safe, clearance.toFixed(1)].join('|');
     const minimumIntervalMs = selected ? 160 : 400;
     if (signature !== entry.labelSignature && now - entry.labelUpdatedAt >= minimumIntervalMs) {
       entry.labelSignature = signature;
       entry.labelUpdatedAt = now;
       const context = entry.labelContext;
       context.clearRect(0, 0, entry.labelCanvas.width, entry.labelCanvas.height);
-      context.fillStyle = selected ? 'rgba(4,15,12,.94)' : 'rgba(4,11,9,.82)';
+      context.fillStyle = selected ? 'rgba(4,15,12,.96)' : 'rgba(4,11,9,.84)';
       context.strokeStyle = safe ? '#35e6ed' : '#ff6b55';
-      context.lineWidth = selected ? 5 : 3;
-      context.fillRect(2, 2, 636, 188); context.strokeRect(3, 3, 634, 186);
-      context.font = '700 29px Consolas, monospace'; context.fillStyle = '#e9ff45';
-      context.fillText(`${entry.vehicle.name} // ${entry.vehicle.classKey?.toUpperCase() ?? ''}`, 18, 39);
-      context.font = '700 24px Consolas, monospace'; context.fillStyle = '#f4f8f1';
-      context.fillText(`PLAN ${requested}`, 18, 76);
+      context.lineWidth = selected ? 2 : 1;
+      context.fillRect(1, 1, 254, 62); context.strokeRect(2, 2, 252, 60);
+      context.font = '700 12px Consolas, monospace'; context.fillStyle = '#e9ff45';
+      context.fillText(`${entry.vehicle.name}  ${String(mode).toUpperCase()}`, 7, 17);
+      context.font = '600 10px Consolas, monospace'; context.fillStyle = '#f4f8f1';
+      context.fillText(`PH ${String(phase).slice(0, 16).toUpperCase()}`, 7, 33);
       context.fillStyle = safe ? '#70f5e8' : '#ff826f';
-      context.fillText(`STATE ${deployed} // ${safe ? 'VALID' : 'BLOCKED'}`, 18, 110);
-      context.font = '600 20px Consolas, monospace'; context.fillStyle = '#b5c9bb';
-      context.fillText(`TGT ${String(target).toUpperCase()} // ${String(reason).slice(0, 34)}`, 18, 145);
-      context.fillText(`CLR ${finite(thought.trajectoryMinimumClearanceM, finite(state.trajectoryMinimumClearanceM, 99)).toFixed(1)}M`, 18, 174);
+      context.fillText(`${safe ? 'SAFE' : 'BLOCK'} CLR ${clearance.toFixed(1)}M`, 7, 48);
+      context.font = '600 9px Consolas, monospace'; context.fillStyle = '#b5c9bb';
+      context.fillText(`TGT ${String(target).toUpperCase().slice(0, 25)}`, 7, 59);
       entry.labelTexture.needsUpdate = true;
     }
-    entry.label.position.set(entry.vehicle.position.x, entry.vehicle.position.y + 3.5, entry.vehicle.position.z);
-    entry.label.scale.set(selected ? 8.4 : 6.4, selected ? 2.52 : 1.92, 1);
+    entry.label.position.set(entry.vehicle.position.x, entry.vehicle.position.y + 2.35, entry.vehicle.position.z);
+    entry.label.scale.set(selected ? 2.25 : 1.65, selected ? 0.62 : 0.46, 1);
   }
 
   _setControllerDebug(enabled) {
@@ -156,7 +161,7 @@ export class AIDebugRenderer {
   setVisible(visible) {
     this.visible = Boolean(visible);
     this.group.visible = this.visible;
-    this.geminiSuite?.setVisible(this.visible);
+    this.selectedSuite?.setVisible(this.visible && !this.fieldView);
     this._setControllerDebug(this.visible);
     if (!this.visible) {
       for (const entry of this.entries) {
@@ -175,6 +180,7 @@ export class AIDebugRenderer {
   setFieldView(enabled) {
     this.fieldView = Boolean(enabled);
     this._setControllerDebug(this.visible);
+    this.selectedSuite?.setVisible(this.visible && !this.fieldView);
     this._refreshStyles();
     if (this.visible) this.update();
     return this.fieldView;
@@ -219,8 +225,8 @@ export class AIDebugRenderer {
   update() {
     if (!this.visible) return;
     const now = globalThis.performance?.now?.() ?? Date.now();
-    for (const entry of this.entries) {
-      const entryIndex = this.entries.indexOf(entry);
+    for (let entryIndex = 0; entryIndex < this.entries.length; entryIndex += 1) {
+      const entry = this.entries[entryIndex];
       const selected = entryIndex === this.selectionIndex;
       const state = entry.controller.debugState;
       const path = state?.planPath ?? state?.path;
@@ -251,10 +257,8 @@ export class AIDebugRenderer {
         entry.geometry.attributes.position.needsUpdate = true;
       }
       entry.line.visible = true;
-      // The selected F3 panel already contains all thought data. CanvasTexture
-      // labels are reserved for F4 and are throttled above to avoid GPU uploads.
-      if (this.fieldView) this._updateThoughtLabel(entry, state, selected, now);
-      if (entry.label) entry.label.visible = this.fieldView;
+      if (this.fieldView && this.fieldLabelsEnabled) this._updateThoughtLabel(entry, state, selected, now);
+      if (entry.label) entry.label.visible = this.fieldView && this.fieldLabelsEnabled;
       if (target && Number.isFinite(target.x) && Number.isFinite(target.y) && Number.isFinite(target.z)) {
         entry.marker.position.set(target.x, target.y + 0.12, target.z);
         entry.marker.visible = true;
@@ -263,10 +267,34 @@ export class AIDebugRenderer {
       }
     }
     const selected = this._selectedEntry();
-    if (selected?.controller && selected?.vehicle) {
-      this.geminiSuite?.update(selected.controller, selected.vehicle, this.vehicles, this.track, now);
+    if (!this.fieldView && selected?.controller?.debugState && selected?.vehicle
+      && now - this._suiteLastUpdateAt >= this._suiteUpdateIntervalMs) {
+      this._suiteLastUpdateAt = now;
+      this.selectedSuite?.update(selected.controller, selected.vehicle, this.vehicles, this.track, now);
     }
     this._refreshStyles();
+  }
+
+  _fieldCars() {
+    return this.entries.map((entry, index) => {
+      const state = entry.controller.debugState ?? {};
+      const mode = state.mode ?? 'WAIT';
+      const safe = Boolean(state.trajectoryCollisionFree) && Boolean(state.trajectoryRoadLegal);
+      return {
+        id: entry.vehicle.id,
+        name: entry.vehicle.name,
+        class: entry.vehicle.classKey ?? entry.vehicle.spec?.key ?? null,
+        mode,
+        phase: state.racecraftPhase ?? state.thought?.deployedManeuver ?? mode,
+        target: state.targetId ?? state.thought?.targetId ?? null,
+        safe,
+        clearance: finite(state.trajectoryMinimumClearanceM, 99),
+        speed: finite(state.currentSpeed, entry.vehicle.speed),
+        targetSpeed: finite(state.desiredSpeed, state.targetSpeed),
+        selected: index === this.selectionIndex,
+        color: MODE_COLORS[mode] ?? MODE_COLORS.RACE
+      };
+    });
   }
 
   snapshot() {
@@ -274,23 +302,25 @@ export class AIDebugRenderer {
     const state = selected?.controller.debugState ?? null;
     if (!state) return {
       enabled: this.visible, fieldView: this.fieldView,
+      textPanelEnabled: this.textPanelEnabled,
       selectedId: selected?.vehicle.id ?? null, selectedName: selected?.vehicle.name ?? null,
-      rlShadow: selected?.vehicle.rlShadow ?? null, state: null
+      fieldCars: this._fieldCars(), state: null
     };
     return {
       ...state,
       enabled: this.visible,
       fieldView: this.fieldView,
+      textPanelEnabled: this.textPanelEnabled,
       selectedId: selected.vehicle.id,
       selectedName: selected.vehicle.name,
-      rlShadow: selected.vehicle.rlShadow ?? null,
+      fieldCars: this._fieldCars(),
       state
     };
   }
 
   dispose() {
     this._setControllerDebug(false);
-    this.geminiSuite?.dispose();
+    this.selectedSuite?.dispose();
     for (const entry of this.entries) {
       this.group.remove(entry.line, entry.marker);
       entry.geometry.dispose();

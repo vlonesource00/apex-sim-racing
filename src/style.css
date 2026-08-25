@@ -91,7 +91,21 @@ canvas { display: block; }
 
 .ai-panel { top: 267px; right: 18px; width: 430px; max-height: calc(100vh - 292px); overflow: auto; display: none; border-color: #35e6ed66; }
 .ai-panel.show { display: block; }
+.ai-panel.field-mode { max-height: min(340px, calc(100vh - 292px)); backdrop-filter: none; background: #0b1210f2; }
+.ai-panel.field-mode > .ai-driver, .ai-panel.field-mode > .ai-intent, .ai-panel.field-mode > .ai-grid,
+.ai-panel.field-mode > .ai-controls, .ai-panel.field-mode > .ai-thought, .ai-panel.field-mode > .ai-footer { display: none; }
 .ai-panel header b { color: var(--cyan); }
+.ai-field-roster { display: none; margin: 6px 0 8px; padding: 6px; background: #07120dcc; border: 1px solid #35e6ed33; }
+.ai-panel.field-mode .ai-field-roster { display: block; }
+.ai-field-legend { display: flex; justify-content: space-between; gap: 7px; padding-bottom: 5px; color: #89a496; font: 600 7px ui-monospace, Consolas, monospace; letter-spacing: .06em; }
+.ai-field-legend > span:last-child { color: #6f8b79; white-space: nowrap; }
+.ai-legend-dot { display: inline-block; width: 5px; height: 5px; margin: 0 2px 1px 5px; border-radius: 50%; background: var(--ai-mode, var(--cyan)); }
+.ai-legend-dot.race { --ai-mode: #35e6ed; background: #35e6ed; }.ai-legend-dot.pass { --ai-mode: #b7f542; background: #b7f542; }.ai-legend-dot.defend { --ai-mode: #f05cff; background: #f05cff; }.ai-legend-dot.recover { --ai-mode: #ff4d4d; background: #ff4d4d; }
+.ai-roster-list { display: grid; gap: 2px; max-height: 190px; overflow-y: auto; scrollbar-width: thin; }
+.ai-roster-row { display: grid; grid-template-columns: 10px 7px minmax(54px, 1fr) 45px 76px minmax(38px, .8fr) 47px 74px; align-items: center; min-height: 21px; gap: 4px; padding: 2px 3px; color: #afc0b1; border-left: 2px solid transparent; font: 600 8px ui-monospace, Consolas, monospace; }
+.ai-roster-row.selected { color: #f2f9ed; background: #e9ff4512; border-left-color: var(--lime); }
+.ai-roster-select { color: var(--lime); font-size: 10px; }.ai-mode-badge { width: 6px; height: 6px; border-radius: 50%; background: var(--ai-mode, var(--cyan)); box-shadow: 0 0 5px var(--ai-mode, var(--cyan)); }
+.ai-roster-row strong, .ai-roster-row span, .ai-roster-row em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.ai-roster-row strong { color: inherit; }.ai-roster-mode { color: var(--ai-mode, var(--cyan)); }.ai-roster-phase, .ai-roster-target, .ai-roster-speed { color: #8fa595; }.ai-roster-safe { font-style: normal; text-align: right; }.ai-roster-safe.ok { color: #70f5e8; }.ai-roster-safe.warn { color: #ff826f; }.ai-roster-empty { padding: 6px; color: #789487; font: 600 8px ui-monospace, Consolas, monospace; }
 .ai-driver { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0 5px; }
 .ai-driver strong { color: #f4faed; font: 800 19px/1 'Arial Narrow', Arial, sans-serif; letter-spacing: -.03em; }
 .ai-driver span { color: var(--cyan); font: 500 8px ui-monospace, Consolas, monospace; }
@@ -157,6 +171,7 @@ canvas { display: block; }
   .standings-panel { top: 78px; left: 12px; width: 192px; padding: 8px; }.standings-row { grid-template-columns: 22px minmax(0, 1fr) 35px 42px; min-height: 22px; font-size: 8px; }.standings-row small { font-size: 6px; }
   .electronics-panel { top: 78px; right: 12px; width: 174px; padding: 8px; }.electronics-panel header { font-size: 8px; }.electronics-grid { gap: 3px; }.electronics-grid article { min-height: 36px; padding: 5px; }.electronics-grid strong { font-size: 14px; }.ers-card { padding: 6px; }
   .ai-panel { top: 232px; right: 12px; width: 286px; padding: 8px; }.ai-driver strong { font-size: 17px; }
+  .ai-field-legend { display: block; line-height: 1.7; }.ai-field-legend > span:last-child { display: block; }.ai-roster-list { max-height: 154px; }.ai-roster-row { grid-template-columns: 9px 6px minmax(45px, 1fr) 39px 55px 38px 66px; gap: 3px; font-size: 7px; }.ai-roster-speed { display: none; }
   .motec { top: 232px; left: 12px; width: 286px; padding: 8px; }.motec .gg { width: 70px; height: 70px; margin: 7px auto; }.motec .gg i { left: 31px; top: 31px; }.telemetry-wheel { padding: 5px; }.telemetry-wheel span { font-size: 7px; }
   .notice { top: 59px; max-width: 95vw; font-size: 8px; overflow: hidden; text-overflow: ellipsis; }
   .mute { top: 198px; right: 12px; padding: 6px 7px; font-size: 8px; }

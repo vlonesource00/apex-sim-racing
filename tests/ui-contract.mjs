@@ -34,13 +34,12 @@ assert.match(main, /aiDebug\.cycleSelection\(\)/);
 assert.match(main, /cameraRig\.setSpectate\(\)/);
 assert.match(main, /cameraRig\.setFree\(\)/);
 assert.match(main, /cameraRig\.updateFree\(input\.freeCameraRaw\(\), rawDelta\)/);
-assert.doesNotMatch(main, /RLShadowController|stage5_candidate_policy|setTacticalPolicy/);
-assert.match(main, /aiMode: 'DETERMINISTIC_V3'/);
-assert.match(hud, /DETERMINISTIC V3/);
+assert.match(main, /aiMode: 'HEURISTIC_RACE_DIRECTOR'/);
+assert.doesNotMatch(hud, /data-role="ref/);
 assert.match(hud, /fixed\(finite\(thought\.requestedClosingSpeedMps/,
   'AI closing speed must be sanitized as a value, never passed as toFixed precision');
 assert.match(main, /race\.standings\(player\)/);
-assert.match(main, /controllers, aiDebug/);
+assert.match(main, /controllers, aiDirector, aiDebug/);
 for (const token of ['.standings-panel', '.electronics-panel', '.ai-panel', '.driver-cluster', '.gear-cluster', '.motec', '@media (max-width: 640px)']) {
   assert.match(style, new RegExp(token.replace(/[().]/g, '\\$&')), `HUD CSS missing: ${token}`);
 }
