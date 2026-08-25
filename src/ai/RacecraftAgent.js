@@ -129,12 +129,13 @@ export class RacecraftAgent {
       return [intent({
         mode: 'LAUNCH', phase: 'LAUNCH_FORMATION', targetId: leader.other.id,
         terminalLateral: ego.lateral, priority: MANEUVER_PRIORITY.LAUNCH,
-        desiredSpeed: Math.min(trackModel.speedAt(ego.distance + 35, ego.vehicle), 22),
+        desiredSpeed: Math.min(trackModel.speedAt(ego.distance, ego.vehicle),
+          Math.max(6, leader.other.forwardSpeed + clamp((leader.delta - 8) * 0.5, -4, 2))),
         committed: true, reason: 'GRID_ROW_ACCELERATION', collisionHorizonS: 0.9
       })];
     }
     if (leaderBlocksLane) {
-      const clearance = ego.halfWidth + leader.other.halfWidth + AI_LIMITS.sideClearanceM;
+      const clearance = ego.halfWidth + leader.other.halfWidth + AI_LIMITS.sideClearanceM + 0.45;
       return [leader.other.lateral + clearance, leader.other.lateral - clearance]
         .map((offset) => clamp(offset, -margin, margin))
         .filter((offset, index, offsets) => offsets.findIndex((value) => Math.abs(value - offset) < 0.1) === index)
@@ -175,10 +176,12 @@ export class RacecraftAgent {
       return [intent({ mode: 'RETURN', phase: 'CLEAR', terminalLateral: trackModel.lineAt(ego.distance + 25),
         priority: MANEUVER_PRIORITY.RETURN, reason: 'PASS_COMPLETE' })];
     }
-    if (this.attack.age > this.attack.maxAge || target.delta > 80) {
+    if (this.attack.age > this.attack.maxAge || target.delta > 45
+      || (!this.attack.overlapSeen && this.attack.age > 3.2 && target.delta > 10)) {
       this.attack = null;
       this.returnTimer = 1.4;
-      return [intent({ mode: 'RETURN', phase: 'ABORT', terminalLateral: ego.lateral,
+      return [intent({ mode: 'RETURN', phase: 'ABORT',
+        terminalLateral: clamp(trackModel.lineAt(ego.distance + 25), ego.lateral - 3.5, ego.lateral + 3.5),
         priority: MANEUVER_PRIORITY.RETURN, reason: 'ATTACK_TIMEOUT' })];
     }
     if (target.overlapLongitudinal) this.attack.overlapSeen = true;
@@ -188,7 +191,7 @@ export class RacecraftAgent {
       mode: 'PASS', phase, targetId: target.other.id,
       terminalLateral: this.attack.offset,
       priority: overlap ? MANEUVER_PRIORITY.SIDE_BY_SIDE : MANEUVER_PRIORITY.COMMITTED_ATTACK,
-      desiredSpeed: Math.min(trackModel.speedAt(ego.distance + 20, ego.vehicle) * 1.05,
+      desiredSpeed: Math.min(trackModel.speedAt(ego.distance, ego.vehicle),
         Math.max(target.other.forwardSpeed + (overlap ? 5 : this.attack.obstacle ? 18 : 12),
           ego.speed + 2.5)),
       committed: true, reason: overlap ? 'CORRIDOR_OWNED' : 'ATTACK_COMMITTED',
@@ -211,7 +214,9 @@ export class RacecraftAgent {
       return [intent({ mode: 'RETURN', phase: 'DEFENSE_RELEASE', terminalLateral: trackModel.lineAt(ego.distance + 30),
         priority: MANEUVER_PRIORITY.RETURN, reason: 'THREAT_CLEARED' })];
     }
-    if (challenger.overlapLongitudinal) this.defense.overlapSeen = true;
+    if (challenger.overlapLongitudinal || (Math.abs(challenger.delta) < 14 && this.defense.age > 1.0)) {
+      this.defense.overlapSeen = true;
+    }
     const phase = this.defense.overlapSeen ? 'EXIT_SQUEEZE' : this.defense.phase;
     return [intent({ mode: 'DEFEND', phase, targetId: challenger.other.id,
       terminalLateral: this.defense.offset, priority: MANEUVER_PRIORITY.DEFEND,
@@ -239,7 +244,8 @@ export class RacecraftAgent {
 
     if (this.returnTimer > 0) {
       this.returnTimer = Math.max(0, this.returnTimer - 1 / 15);
-      return [intent({ mode: 'RETURN', phase: 'SAFE_REJOIN', terminalLateral: trackModel.lineAt(ego.distance + 28),
+      return [intent({ mode: 'RETURN', phase: 'SAFE_REJOIN',
+        terminalLateral: clamp(trackModel.lineAt(ego.distance + 28), ego.lateral - 3.5, ego.lateral + 3.5),
         priority: MANEUVER_PRIORITY.RETURN, reason: 'SETTLE_AFTER_COMBAT' })];
     }
 
@@ -308,7 +314,7 @@ export class RacecraftAgent {
             + clamp((ahead.delta - towGap) * 0.45, -3, 6);
           return [intent({ mode: 'FOLLOW', phase: 'SLIPSTREAM_TOW', targetId: ahead.other.id,
             terminalLateral: ahead.other.lateral, priority: MANEUVER_PRIORITY.DRAFT,
-            desiredSpeed: Math.min(trackModel.speedAt(ego.distance + 30, ego.vehicle),
+            desiredSpeed: Math.min(trackModel.speedAt(ego.distance, ego.vehicle),
               openFlank ? Math.max(ego.speed - 0.4, gapControlSpeed) : gapControlSpeed),
             collisionHorizonS: 0.2, reason: 'BUILD_TOW_TO_PULL_OUT' })];
         }
@@ -329,7 +335,16 @@ export class RacecraftAgent {
           + (ahead.other.lateralSpeed < -0.08 ? 2.5 : ahead.other.lateralSpeed > 0.08 ? -2 : 0);
         if (ego.lateral < ahead.other.lateral) negativeScore += 1;
         else positiveScore += 1;
-        const speedIntent = Math.min(trackModel.speedAt(ego.distance + 30, ego.vehicle) * 1.04,
+        for (const entry of traffic.entries) {
+          if (entry.other.id === ahead.other.id || entry.delta <= -4 || entry.delta >= 24) continue;
+          if (Math.abs(entry.other.lateral - negativeOffset) < ego.halfWidth + entry.other.halfWidth + 0.6) {
+            negativeScore -= 12;
+          }
+          if (Math.abs(entry.other.lateral - positiveOffset) < ego.halfWidth + entry.other.halfWidth + 0.6) {
+            positiveScore -= 12;
+          }
+        }
+        const speedIntent = Math.min(trackModel.speedAt(ego.distance, ego.vehicle),
           Math.max(ego.speed + 4, ahead.other.forwardSpeed + (slowObstacle ? 18 : 12)));
         const candidates = [
           intent({ mode: 'PASS', phase: insideSign < 0 ? (corner.distanceM < 55 ? 'DIVEBOMB' : 'ATTACK_INSIDE')
@@ -353,7 +368,7 @@ export class RacecraftAgent {
             mode: 'FOLLOW', phase: 'GAP_CONTROL', targetId: ahead.other.id,
             terminalLateral: ahead.other.lateral,
             priority: MANEUVER_PRIORITY.ATTACK - 1,
-            desiredSpeed: Math.min(trackModel.speedAt(ego.distance + 24, ego.vehicle),
+            desiredSpeed: Math.min(trackModel.speedAt(ego.distance, ego.vehicle),
               Math.max(0, ahead.other.forwardSpeed + clamp((ahead.delta - safeGap) * 0.5, -10, 2))),
             committed: false, collisionHorizonS: 0.45, reason: 'SAFE_FOLLOWING_GAP'
           }));

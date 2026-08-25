@@ -22,12 +22,12 @@ export const AI_LIMITS = Object.freeze({
 });
 
 export const CLASS_DYNAMICS = Object.freeze({
-  prototype: Object.freeze({ lateralBase: 21.5, lateralMax: 34, aeroUtilization: 0.78, cornerFactor: 1.03,
+  prototype: Object.freeze({ lateralBase: 21.5, lateralMax: 34, aeroUtilization: 0.78, cornerFactor: 0.98,
     brake: 17.5, accel: 9.0, topSpeed: 76 }),
   gt: Object.freeze({ lateralBase: 15.6, lateralMax: 18, aeroUtilization: 0.68, cornerFactor: 1,
     brake: 8.5, accel: 7.2, topSpeed: 62 }),
   touring: Object.freeze({ lateralBase: 10.2, lateralMax: 11.0, aeroUtilization: 0.52, cornerFactor: 1,
-    brake: 12.0, accel: 7.5, topSpeed: 53 })
+    brake: 8.0, accel: 7.5, topSpeed: 53 })
 });
 
 export const MANEUVER_PRIORITY = Object.freeze({

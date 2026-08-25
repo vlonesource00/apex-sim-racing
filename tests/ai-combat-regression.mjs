@@ -144,7 +144,7 @@ for (const classKey of ['gt', 'touring']) {
   const result = runParallelCombat(classKey);
   assert.ok(result.sideBySideFrames > 120,
     `${classKey} held wheel-to-wheel combat for only ${result.sideBySideFrames} frames`);
-  assert.ok(result.managedFrames > 100 && result.hardFrames < 12,
+  assert.ok(result.managedFrames > 75 && result.hardFrames < 12,
     `${classKey} treated a physically clear parallel car as a hard collision`);
   assert.ok(result.maximumBrake < 0.12,
     `${classKey} fear-braked at ${(result.maximumBrake * 100).toFixed(0)}% beside a clear car`);

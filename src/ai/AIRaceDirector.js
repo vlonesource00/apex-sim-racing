@@ -74,12 +74,15 @@ export class AIRaceDirector {
         ? group.proposals.find((proposal) => proposal.intent.mode === 'RECOVER' && proposal.roadLegal)
         : null;
       const committedMode = group.agent.attack ? 'PASS' : group.agent.defense ? 'DEFEND' : null;
+      const conflicts = (proposal) => selected.some((other) =>
+        this.planner.trajectoriesConflict(proposal, other, snapshot.track.length));
       choice ??= committedMode ? group.proposals.find((proposal) => proposal.intent.mode === committedMode
-        && proposal.roadLegal && proposal.collisionFree && proposal.dynamicallyFeasible) : null;
+        && proposal.roadLegal && proposal.collisionFree && proposal.dynamicallyFeasible && !conflicts(proposal)) : null;
       choice ??= committedMode ? group.proposals
         .filter((proposal) => proposal.intent.mode === committedMode
-          && proposal.roadLegal)
+          && proposal.roadLegal && !conflicts(proposal))
         .sort((a, b) => Number(b.collisionFree) - Number(a.collisionFree)
+          || Number(b.hardCollisionFree) - Number(a.hardCollisionFree)
           || finite(b.earliestCollisionTimeS, Infinity) - finite(a.earliestCollisionTimeS, Infinity)
           || Number(b.dynamicallyFeasible) - Number(a.dynamicallyFeasible)
           || b.minimumClearanceM - a.minimumClearanceM || a.score - b.score)[0] : null;
@@ -87,17 +90,12 @@ export class AIRaceDirector {
       choice ??= previousPhase && previousPhase !== 'BRAKE_FALLBACK'
         && group.agent.planPhaseAge < 16
         ? group.proposals.find((proposal) => proposal.intent.phase === previousPhase
-          && proposal.roadLegal && proposal.collisionFree && proposal.dynamicallyFeasible)
+          && proposal.roadLegal && proposal.collisionFree && proposal.dynamicallyFeasible && !conflicts(proposal))
         : null;
       choice ??= group.proposals.find((proposal) => proposal.intent.phase !== 'BRAKE_FALLBACK'
         && proposal.roadLegal && proposal.collisionFree
         && proposal.dynamicallyFeasible
-        && !selected.some((other) => {
-          const moving = Math.abs(proposal.terminalLateral - proposal.startLateral) > 0.7;
-          const otherMoving = Math.abs(other.terminalLateral - other.startLateral) > 0.7;
-          return moving && otherMoving
-            && this.planner.trajectoriesConflict(proposal, other, snapshot.track.length);
-        }));
+        && !conflicts(proposal));
       choice ??= group.proposals.find((proposal) => proposal.intent.phase !== 'BRAKE_FALLBACK'
         && proposal.roadLegal && proposal.collisionFree
         && proposal.dynamicallyFeasible);
@@ -295,6 +293,7 @@ export class AIRaceDirector {
       },
       target: actuation.target,
       plan,
+      trajectory: plan,
       marshalRequested: Boolean(intent.marshalRequested),
       cooldownDt: intent.mode === 'COOLDOWN' ? 1 / AI_TIMING.physicsHz : 0,
       debugState

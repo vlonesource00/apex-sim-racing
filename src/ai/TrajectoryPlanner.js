@@ -48,9 +48,6 @@ export class TrajectoryPlanner {
       && Math.abs(terminal - ego.lateral) > 5.2) targetSpeed = Math.min(targetSpeed, 24);
     const settlingMove = ['LINE_RECOVERY', 'SAFE_REJOIN', 'DEFENSE_RELEASE', 'CLEAR', 'ABORT']
       .includes(intentValue.phase);
-    if (settlingMove && Math.abs(terminal - ego.lateral) > 5) {
-      targetSpeed = Math.min(targetSpeed, Math.max(14, ego.speed - 3));
-    }
     const acceleration = clamp((targetSpeed - ego.speed) * 0.65, -dynamics.brake, dynamics.accel);
     const points = [];
     let roadViolation = 0;
@@ -151,7 +148,7 @@ export class TrajectoryPlanner {
           // when a flank is opening: that makes the attacker finish the lane
           // change before it earns full throttle instead of leaning on cars.
           const managedOccupancy = targetCombat && !bodyCollision
-            && currentBodyLateralClearance > 0.35 && bodyLateralClearance > 0.35;
+            && currentBodyLateralClearance > 0.05 && bodyLateralClearance > 0.05;
           collisionCount += 1;
           earliestCollisionTime = Math.min(earliestCollisionTime, time);
           if (managedOccupancy) {
@@ -188,7 +185,7 @@ export class TrajectoryPlanner {
     const lateralExcess = Math.max(0, maxLateralUtilization - 1.02);
     const progressReward = targetSpeed * 8 + finite(intentValue.priority) * 120;
     const movementCost = Math.abs(terminal - ego.lateral) * (intentValue.mode === 'LAUNCH' ? 10 : 4);
-    const score = roadViolation * 1e8 + collisionCount * 1e7 + proximityCost * 85
+    const score = roadViolation * 1e8 + hardCollisionCount * 1e7 + managedOccupancyCount * 1e4 + proximityCost * 85
       + lateralExcess * lateralExcess * 12000 + movementCost + transitionTime * 2 - progressReward;
     return {
       vehicleId: ego.id,

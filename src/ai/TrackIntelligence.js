@@ -21,7 +21,7 @@ const curvature3 = (a, b, c) => {
 export class TrackIntelligence {
   static for(track) {
     const cached = CACHE.get(track);
-    if (cached?.revision === track.revision) return cached;
+    if (cached) return cached;
     const created = new TrackIntelligence(track);
     CACHE.set(track, created);
     return created;
@@ -141,9 +141,7 @@ export class TrackIntelligence {
       const geometricCurvature = curvature3(previous, current, next);
       const rawCurvature = Math.abs(finite(this.track.scalarAtDistance(
         this.samples[index].distance)?.curvature));
-      const curvatureCeiling = rawCurvature < 0.0045
-        ? Math.max(rawCurvature, 0.00015) : rawCurvature * 1.08;
-      this.samples[index].lineCurvature = Math.min(geometricCurvature, curvatureCeiling);
+      this.samples[index].lineCurvature = Math.max(geometricCurvature, rawCurvature);
     }
   }
 

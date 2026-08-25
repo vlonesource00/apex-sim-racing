@@ -64,6 +64,8 @@ export class Vehicle {
     this.angularVelocity = { x: 0, y: 0, z: 0 };
     this.orientation = { x: 0, y: 0, z: 0, w: 1 };
     this.controls = { throttle: 0, brake: 0, steer: 0, handbrake: 0 };
+    this.stabilityRequest = null;
+    this.aiMarshalRecoveries = 0;
     this.brakePressure = 0;
     this.steering = 0;
     this.gear = 1;
@@ -204,6 +206,8 @@ export class Vehicle {
     this.yawRate = 0;
     this.angularVelocity.x = this.angularVelocity.y = this.angularVelocity.z = 0;
     this.brakePressure = 0;
+    this.stabilityRequest = null;
+    this.aiMarshalRecoveries = 0;
     this.roll = this.pitch = 0;
     this.roadBank = 0;
     this.roadGrade = 0;

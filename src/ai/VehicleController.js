@@ -1,5 +1,6 @@
 import { clamp, wrapAngle } from '../core/math.js';
 import { classDynamics, cornerSpeedFor, finite, lateralCapacity } from './AIConfig.js';
+import { TrackIntelligence } from './TrackIntelligence.js';
 
 const drivenWheelIndices = (vehicle) => vehicle.spec?.drive === 'front'
   ? [0, 1] : vehicle.spec?.drive === 'all' ? [0, 1, 2, 3] : [2, 3];
@@ -29,9 +30,9 @@ export class VehicleController {
     const localCurvature = clamp(finite(target.signedCurvature), -0.12, 0.12);
     const desiredYawRate = ego.speed * localCurvature;
     const yawError = ego.yawRate - desiredYawRate;
-    const steeringAuthority = ego.classKey === 'touring' ? 9 : 15;
+    const steeringAuthority = ego.classKey === 'touring' ? 13.5 : 15;
     const steerLimit = plan.intent.mode === 'RECOVER' || plan.intent.phase === 'LINE_RECOVERY' ? 1
-      : clamp(steeringAuthority / Math.max(8, ego.speed), 0.27, 1);
+      : clamp(steeringAuthority / Math.max(8, ego.speed), 0.35, 1);
     let steerTarget = headingError * 2.55 - lateralError * 0.075
       - ego.yawRate * 0.18 + slipAngle * 1.18;
     if (plan.intent.mode === 'LAUNCH') steerTarget = clamp(steerTarget, -0.38, 0.38);
@@ -52,11 +53,17 @@ export class VehicleController {
     // passed the planner's lateral-acceleration check. Reinterpreting their
     // intentional lane change as a tiny-radius corner makes an attacker crawl
     // beside the obstacle it is trying to clear.
-    if (!['PASS', 'LAUNCH', 'PACE'].includes(plan.intent.mode)) {
+    if (!['PASS', 'LAUNCH', 'PACE', 'RETURN', 'DEFEND'].includes(plan.intent.mode)) {
       desiredSpeed = Math.min(desiredSpeed, previewLimit);
     }
     if (ego.wake.frontLoss > 0.02 && Math.abs(agent.steerCommand) > 0.16) {
       desiredSpeed *= clamp(1 - ego.wake.frontLoss * 0.42, 0.82, 1);
+    }
+    const trackModel = snapshot.trackModel ?? TrackIntelligence.for(snapshot.track);
+    const offLineDistance = Math.abs(ego.lateral - trackModel.lineAt(ego.distance));
+    const trackCurvature = Math.abs(trackModel.curvatureAt(ego.distance));
+    if (trackCurvature > 0.004 && offLineDistance > 2.2) {
+      desiredSpeed *= clamp(1 - (offLineDistance - 2.2) * 0.035, 0.82, 1);
     }
     const tireWear = ego.vehicle.wheels?.map((wheel) => finite(wheel.tyre?.wear, finite(wheel.wear))) ?? [];
     const limitingWear = tireWear.length >= 4
@@ -68,11 +75,7 @@ export class VehicleController {
     }
     if (plan.intent.mode === 'RECOVER') desiredSpeed = Math.min(desiredSpeed, 11);
     if (!plan.collisionFree && finite(plan.earliestCollisionTimeS, Infinity) < 0.45) {
-      if (plan.intent.phase === 'SIDE_BY_SIDE' && plan.hardCollisionFree) {
-        const overlapFloor = ego.classKey === 'prototype' ? 16
-          : ego.classKey === 'gt' ? 13 : 11;
-        desiredSpeed = Math.min(desiredSpeed, Math.max(overlapFloor, ego.speed - 1.2));
-      } else {
+      if (!(plan.intent.phase === 'SIDE_BY_SIDE' && plan.hardCollisionFree)) {
         const combatFloor = ['PASS', 'DEFEND', 'LAUNCH'].includes(plan.intent.mode) ? 8 : 5;
         desiredSpeed = Math.min(desiredSpeed, Math.max(combatFloor, ego.speed - 3));
       }
